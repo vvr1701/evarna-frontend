@@ -1,14 +1,18 @@
 // App.tsx (navigation) — main orchestrator replicating app.jsx's string-based
 // router. Keeps the exact go(screen) + tab behavior of the prototype.
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { W } from '../theme/theme';
 import { ScreenName } from './types';
 import {
   CONFIG, PLUS_COMPANIONS, FREE_COMPANIONS, STUDIO_ACTIVE_CONVOS,
   SCENARIOS, SANDBOX_MODES, ARCHETYPE_COLORS, Companion, Scenario, SandboxMode,
 } from '../data/config';
+import { onboardUser, getVoices, ApiVoice } from '../api';
+
+const SESSION_KEY = 'whisper_session';
 import { BottomNav, TabId } from '../components/BottomNav';
 
 import {
@@ -30,6 +34,16 @@ import {
 
 const t = CONFIG;
 
+// Archetype name mapping: frontend uses 'friend', backend uses 'bestfriend'
+const ARCHETYPE_MAP: Record<string, string> = {
+  friend: 'bestfriend', mentor: 'mentor', partner: 'partner', challenger: 'challenger',
+};
+
+const INTENT_MAP: Record<string, string> = {
+  mentor: 'personal development', friend: 'emotional support',
+  partner: 'connection', challenger: 'accountability',
+};
+
 export default function App() {
   // Routing
   const [screen, setScreen] = useState<ScreenName>(t.showFirstChat ? 'splash' : 'home');
@@ -40,9 +54,64 @@ export default function App() {
   const [paywallTrigger] = useState('voice');
 
   // Onboarding-collected
-  const [, setVoicePick] = useState<string | null>(null);
+  const [voicePick, setVoicePick] = useState<string | null>(null);
   const [archetypePick, setArchetypePick] = useState<Companion['archetype']>('mentor');
   const [companionName, setCompanionName] = useState(t.companionName || 'Sage');
+
+  // Onboarding user attributes (collected from screens S02 / S05 / S06)
+  const [dateOfBirth, setDateOfBirth] = useState('1995-06-15');
+  const [userGender, setUserGender] = useState('non-binary');
+  const [commStyle, setCommStyle] = useState('warm');
+
+  // Backend IDs — set after successful onboarding API call
+  const [userId, setUserId] = useState<string | null>(null);
+  const [characterId, setCharacterId] = useState<string | null>(null);
+
+  // The companion created during onboarding — replaces static placeholder on home screen
+  const [userCompanion, setUserCompanion] = useState<Companion | null>(null);
+
+  // Prevent double-write on first restore
+  const restoredRef = useRef(false);
+
+  // Restore persisted session on launch so the companion survives app restarts
+  useEffect(() => {
+    AsyncStorage.getItem(SESSION_KEY)
+      .then(raw => {
+        if (!raw) return;
+        const saved = JSON.parse(raw) as { userId: string; characterId: string; companion: Companion };
+        if (saved.userId) setUserId(saved.userId);
+        if (saved.characterId) setCharacterId(saved.characterId);
+        if (saved.companion) {
+          setUserCompanion(saved.companion);
+          setCompanionName(saved.companion.name);
+          setArchetypePick(saved.companion.archetype);
+        }
+        restoredRef.current = true;
+      })
+      .catch(() => {});
+  }, []);
+
+  // Persist session whenever IDs are set (only after onboarding, not on restore)
+  useEffect(() => {
+    if (!userId || !characterId) return;
+    const companion: Companion = {
+      id: characterId,
+      name: companionName,
+      archetype: archetypePick,
+      lastTalked: 'Just now',
+    };
+    setUserCompanion(companion);
+    AsyncStorage.setItem(SESSION_KEY, JSON.stringify({ userId, characterId, companion })).catch(() => {});
+  }, [userId, characterId]);
+
+  // Voice catalog from backend (fetched once on mount)
+  const [backendVoices, setBackendVoices] = useState<ApiVoice[]>([]);
+
+  useEffect(() => {
+    getVoices()
+      .then(setBackendVoices)
+      .catch(() => { /* backend offline — S07_Voice falls back to config voices */ });
+  }, []);
 
   // characters (Studio)
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -52,9 +121,16 @@ export default function App() {
     dailyCheckin: true, weeklyReflection: true, autoPlay: true, liveCaptions: true,
   });
 
-  const companions = t.tier === 'free' ? FREE_COMPANIONS : PLUS_COMPANIONS.slice(0, t.tier === 'plus' ? 3 : 5);
+  // When the user has a real companion, put it first; keep static ones as extras for UI demo
+  const companions: Companion[] = userCompanion
+    ? [userCompanion, ...PLUS_COMPANIONS.filter(c => c.id !== userCompanion.id).slice(0, 2)]
+    : (t.tier === 'free' ? FREE_COMPANIONS : PLUS_COMPANIONS.slice(0, t.tier === 'plus' ? 3 : 5));
   const isMinor = false;
   const currentCompanion: Companion = activeCompanion || companions[0];
+
+  // Only pass backend IDs to chat when the selected companion is the real onboarded one.
+  // Static placeholder companions (Atlas, Nova, etc.) should get prototype mode (no backend).
+  const activeCharacterId = currentCompanion.id === characterId ? characterId : null;
 
   // Navigation helper — mirrors prototype go()
   const go = (s: ScreenName) => {
@@ -71,6 +147,38 @@ export default function App() {
     if (tab === 'studio') setScreen('studio');
     if (tab === 'sandbox') setScreen('sandbox');
     if (tab === 'settings') setScreen('settings');
+  };
+
+  // Called from S08_Name — fires onboard API in background then lets screen navigate
+  const handlePickName = (name: string) => {
+    setCompanionName(name);
+    const selectedVoice = backendVoices.find(v => v.id === voicePick);
+    onboardUser({
+      display_name: t.userName,
+      gender: userGender,
+      date_of_birth: dateOfBirth,
+      communication_style: commStyle,
+      intent: INTENT_MAP[archetypePick] ?? 'emotional support',
+      companion: {
+        name,
+        archetype: ARCHETYPE_MAP[archetypePick] ?? archetypePick,
+        gender: selectedVoice?.gender ?? 'female',
+        voice_id: voicePick ?? '',
+      },
+    })
+      .then(res => {
+        setUserId(res.user_id);
+        setCharacterId(res.character_id);
+        // Immediately surface companion on home screen (persist effect fires separately)
+        const newCompanion: Companion = {
+          id: res.character_id,
+          name,
+          archetype: archetypePick,
+          lastTalked: 'Just now',
+        };
+        setUserCompanion(newCompanion);
+      })
+      .catch(e => console.warn('[Onboarding] API failed:', e));
   };
 
   // Home rendered plainly (used both as a screen and as the backdrop for sheets)
@@ -92,22 +200,22 @@ export default function App() {
   const renderScreen = () => {
     switch (screen) {
       case 'splash': return <S01_Splash go={go} />;
-      case 'age': return <S02_Age go={go} />;
+      case 'age': return <S02_Age go={go} onDob={setDateOfBirth} />;
       case 'disclosure': return <S03_Disclosure go={go} />;
-      case 'pronouns': return <S05_Pronouns go={go} />;
-      case 'comm': return <S06_Comm go={go} />;
+      case 'pronouns': return <S05_Pronouns go={go} onGender={setUserGender} />;
+      case 'comm': return <S06_Comm go={go} onCommStyle={setCommStyle} />;
       case 'handoff': return <S_Handoff go={go} />;
       case 'archetype': return <S04_Archetype go={go} onPick={setArchetypePick} />;
-      case 'voice': return <S07_Voice go={go} onPickVoice={setVoicePick} />;
-      case 'name': return <S08_Name go={go} archetype={archetypePick} onPickName={setCompanionName} />;
+      case 'voice': return <S07_Voice go={go} onPickVoice={setVoicePick} apiVoices={backendVoices} />;
+      case 'name': return <S08_Name go={go} archetype={archetypePick} onPickName={handlePickName} />;
       case 'meet': return <S_Meet go={go} companion={{ name: companionName, archetype: archetypePick }} accent={ARCHETYPE_COLORS[archetypePick] || W.primary} />;
       case 'notif': return <S25_NotifPermission go={go} companion={{ id: 'new', name: companionName, archetype: archetypePick }} />;
-      case 'first-chat': return <S14_Chat go={(s) => go(s)} companion={{ id: 'new', name: companionName, archetype: archetypePick }} accent={t.orbHue} userName={t.userName} firstRun openMemorySheet={() => {}} />;
+      case 'first-chat': return <S14_Chat go={(s) => go(s)} companion={{ id: 'new', name: companionName, archetype: archetypePick }} accent={t.orbHue} userName={t.userName} firstRun openMemorySheet={() => {}} userId={userId ?? undefined} characterId={characterId ?? undefined} />;
       case 'home': return renderHome(true);
       case 'callDepleted': return <S27_StartCallDepleted companion={currentCompanion} onClose={() => setScreen('home')} onTopUp={() => setScreen('topup')} onUpgrade={() => setScreen('paywall')} onText={() => setScreen('chat')} />;
       case 'add-companion': return <S11_AddCompanion go={go} tier={t.tier} onCreate={(c) => { PLUS_COMPANIONS.push({ id: String(Date.now()), ...c, memory: '', lastTalked: 'New' } as Companion); }} />;
-      case 'call': return <S12_VoiceCall go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} orbIntensity={1} minutesRemaining={t.minutesRemaining} />;
-      case 'chat': return <S14_Chat go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} capHit={t.capHit} userName={t.userName} openMemorySheet={() => {}} />;
+      case 'call': return <S12_VoiceCall go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} orbIntensity={1} minutesRemaining={t.minutesRemaining} userId={activeCharacterId ? userId ?? undefined : undefined} characterId={activeCharacterId ?? undefined} />;
+      case 'chat': return <S14_Chat go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} capHit={t.capHit} userName={t.userName} openMemorySheet={() => {}} userId={activeCharacterId ? userId ?? undefined : undefined} characterId={activeCharacterId ?? undefined} />;
       case 'crisis': return <S28_CrisisChat go={go} companion={currentCompanion} />;
       case 'profile': return <S26_CompanionEdit go={(s) => go(s)} companion={currentCompanion} onDelete={() => {}} />;
       case 'recap': return (
@@ -129,7 +237,7 @@ export default function App() {
       case 'sandbox': return <S19_SandboxHome go={go} comingSoon={t.sandboxComingSoon} isMinor={isMinor} openMode={(m) => { setSandboxMode(m); setScreen('sandbox-session'); }} />;
       case 'sandbox-session': return <S20_SandboxSession go={go} mode={sandboxMode || SANDBOX_MODES[0]} />;
       case 'settings': return <S21_Settings go={go} tier={t.tier} companions={companions} userName={t.userName} userEmail={`${t.userName.toLowerCase()}@whisper.app`} settings={settings} setSettings={setSettings} />;
-      case 'memories': return <S22_Memories go={go} />;
+      case 'memories': return <S22_Memories go={go} characterId={characterId ?? undefined} companionName={currentCompanion.name} />;
       case 'paywall': return <S23_Paywall go={go} trigger={paywallTrigger} currentTier={t.tier} />;
       case 'topup': return <S24_TopUp go={go} />;
       case 'login': return <S30_Login go={go} />;

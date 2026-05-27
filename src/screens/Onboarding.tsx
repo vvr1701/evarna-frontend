@@ -15,6 +15,7 @@ import { useEntrance, useBreathe, useMeetIn } from '../theme/animations';
 import { W, alpha } from '../theme/theme';
 import { Go, Archetype } from '../navigation/types';
 import { NAME_SUGGESTIONS, VOICES, ARCHETYPE_COLORS } from '../data/config';
+import type { ApiVoice } from '../api';
 
 const BackBtn = ({ onPress }: { onPress: () => void }) => (
   <Pressable onPress={onPress}><NavIcon name="back" color={W.text2} /></Pressable>
@@ -79,11 +80,16 @@ function DateWheel({ options, value, onChange, width }: { options: string[]; val
 }
 
 // ─── S02 AGE ─────────────────────────────────────────────────────────────
-export function S02_Age({ go }: { go: Go }) {
+export function S02_Age({ go, onDob }: { go: Go; onDob?: (dob: string) => void }) {
   const [month, setMonth] = useState(5);
   const [day, setDay] = useState(14);
   const [year, setYear] = useState(1995);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const handleContinue = () => {
+    const dobStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onDob?.(dobStr);
+    go('disclosure');
+  };
   return (
     <Screen>
       <TopBar left={<BackBtn onPress={() => go('splash')} />} />
@@ -97,7 +103,7 @@ export function S02_Age({ go }: { go: Go }) {
         </View>
       </View>
       <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 }}>
-        <PrimaryButton onPress={() => go('disclosure')}>Continue</PrimaryButton>
+        <PrimaryButton onPress={handleContinue}>Continue</PrimaryButton>
       </View>
     </Screen>
   );
@@ -127,8 +133,14 @@ export function S03_Disclosure({ go }: { go: Go }) {
   );
 }
 
+const PRONOUN_GENDER: Record<string, string> = {
+  'He / Him': 'male',
+  'She / Her': 'female',
+  'They / Them': 'non-binary',
+};
+
 // ─── S05 PRONOUNS ────────────────────────────────────────────────────────
-export function S05_Pronouns({ go }: { go: Go }) {
+export function S05_Pronouns({ go, onGender }: { go: Go; onGender?: (g: string) => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const opts = ['He / Him', 'She / Her', 'They / Them'];
   return (
@@ -139,7 +151,18 @@ export function S05_Pronouns({ go }: { go: Go }) {
         <Txt font="comp" weight={700} style={{ fontSize: 24, color: W.text, lineHeight: 31 }}>How should your companion refer to you?</Txt>
         <View style={{ marginTop: 32, flexDirection: 'row', gap: 12 }}>
           {opts.map(o => (
-            <Pill key={o} active={picked === o} onPress={() => { setPicked(o); setTimeout(() => go('comm'), 300); }} style={{ flex: 1 }}>{o}</Pill>
+            <Pill
+              key={o}
+              active={picked === o}
+              onPress={() => {
+                setPicked(o);
+                onGender?.(PRONOUN_GENDER[o] ?? 'non-binary');
+                setTimeout(() => go('comm'), 300);
+              }}
+              style={{ flex: 1 }}
+            >
+              {o}
+            </Pill>
           ))}
         </View>
         <Txt font="user" style={{ marginTop: 16, fontSize: 13, color: W.text2 }}>This helps your companion talk naturally with you.</Txt>
@@ -148,8 +171,15 @@ export function S05_Pronouns({ go }: { go: Go }) {
   );
 }
 
+const COMM_STYLE_MAP: Record<string, string> = {
+  'Warm & gentle': 'warm',
+  'Direct & honest': 'direct',
+  'Funny & light': 'funny',
+  'Calm & slow': 'calm',
+};
+
 // ─── S06 COMM STYLE ──────────────────────────────────────────────────────
-export function S06_Comm({ go }: { go: Go }) {
+export function S06_Comm({ go, onCommStyle }: { go: Go; onCommStyle?: (s: string) => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const opts = ['Warm & gentle', 'Direct & honest', 'Funny & light', 'Calm & slow'];
   return (
@@ -160,7 +190,18 @@ export function S06_Comm({ go }: { go: Go }) {
         <Txt font="comp" weight={700} style={{ fontSize: 24, color: W.text, lineHeight: 31 }}>How do you like conversations?</Txt>
         <View style={{ marginTop: 32, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {opts.map(o => (
-            <Pill key={o} active={picked === o} onPress={() => { setPicked(o); setTimeout(() => go('handoff'), 300); }} style={{ width: '47%' }}>{o}</Pill>
+            <Pill
+              key={o}
+              active={picked === o}
+              onPress={() => {
+                setPicked(o);
+                onCommStyle?.(COMM_STYLE_MAP[o] ?? 'warm');
+                setTimeout(() => go('handoff'), 300);
+              }}
+              style={{ width: '47%' }}
+            >
+              {o}
+            </Pill>
           ))}
         </View>
       </View>
@@ -251,11 +292,35 @@ export function S04_Archetype({ go, onPick }: { go: Go; onPick: (a: Archetype) =
 }
 
 // ─── S07 VOICE ───────────────────────────────────────────────────────────
-export function S07_Voice({ go, onPickVoice }: { go: Go; onPickVoice: (v: string) => void }) {
+// Displays backend voices when apiVoices is provided; falls back to config VOICES.
+// onPickVoice receives the voice UUID when using backend voices, or name otherwise.
+export function S07_Voice({
+  go,
+  onPickVoice,
+  apiVoices,
+}: {
+  go: Go;
+  onPickVoice: (v: string) => void;
+  apiVoices?: ApiVoice[];
+}) {
   const [gender, setGender] = useState('female');
   const [voice, setVoice] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const playPreview = (v: string) => { setPlaying(v); setTimeout(() => setPlaying(null), 1800); };
+  const playPreview = (id: string) => { setPlaying(id); setTimeout(() => setPlaying(null), 1800); };
+
+  const usingApi = (apiVoices?.length ?? 0) > 0;
+
+  // Unified display item: id = UUID (backend) or name (config fallback)
+  const displayVoices = usingApi
+    ? (apiVoices ?? [])
+        .filter(v => v.gender === gender)
+        .map(v => ({ id: v.id, name: v.name, desc: v.personality ?? '' }))
+    : (VOICES[gender] ?? []).map(v => ({ id: v.n, name: v.n, desc: v.d }));
+
+  const genderTabs = usingApi
+    ? [{ k: 'male', l: 'Male' }, { k: 'female', l: 'Female' }]
+    : [{ k: 'male', l: 'Male' }, { k: 'female', l: 'Female' }, { k: 'neutral', l: 'Neutral' }];
+
   return (
     <Screen>
       <TopBar left={<BackBtn onPress={() => go('archetype')} />} center={<ProgressDots total={5} current={4} />} />
@@ -264,18 +329,18 @@ export function S07_Voice({ go, onPickVoice }: { go: Go; onPickVoice: (v: string
         <Txt font="comp" weight={700} style={{ fontSize: 24, color: W.text, lineHeight: 30 }}>How should they sound?</Txt>
         <Txt font="user" style={{ marginTop: 6, fontSize: 13, color: W.text2 }}>Tap any voice to hear a preview.</Txt>
         <View style={{ marginTop: 20, flexDirection: 'row', gap: 8 }}>
-          {[{ k: 'male', l: 'Male' }, { k: 'female', l: 'Female' }, { k: 'neutral', l: 'Neutral' }].map(g => (
+          {genderTabs.map(g => (
             <Pill key={g.k} active={gender === g.k} onPress={() => { setGender(g.k); setVoice(null); }} style={{ flex: 1, height: 38 }} textStyle={{ fontSize: 13 }}>{g.l} Voice</Pill>
           ))}
         </View>
         <ScrollView style={{ marginTop: 20 }} contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {VOICES[gender].map(v => {
-            const isSel = voice === v.n;
-            const isPlay = playing === v.n;
+          {displayVoices.map(v => {
+            const isSel = voice === v.id;
+            const isPlay = playing === v.id;
             return (
               <Pressable
-                key={v.n}
-                onPress={() => { setVoice(v.n); playPreview(v.n); }}
+                key={v.id}
+                onPress={() => { setVoice(v.id); playPreview(v.id); }}
                 style={{
                   width: '31.5%', height: 110, borderRadius: 16, padding: 12,
                   alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -285,8 +350,8 @@ export function S07_Voice({ go, onPickVoice }: { go: Go; onPickVoice: (v: string
                 }}
               >
                 <Waveform color={isPlay ? W.accent : W.primary} animate={isPlay} size={36} />
-                <Txt font="user" weight={500} style={{ fontSize: 13, color: W.text }}>{v.n}</Txt>
-                <Txt font="user" style={{ fontSize: 10, color: W.text2 }}>{v.d}</Txt>
+                <Txt font="user" weight={500} style={{ fontSize: 13, color: W.text }}>{v.name}</Txt>
+                <Txt font="user" style={{ fontSize: 10, color: W.text2 }} numberOfLines={2}>{v.desc}</Txt>
                 {isSel && !isPlay && (
                   <View style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: W.accent, alignItems: 'center', justifyContent: 'center' }}>
                     <NavIcon name="check" color={W.bg} size={10} />

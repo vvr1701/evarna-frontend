@@ -5,6 +5,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ScrollView, Pressable, Animated, Easing } from 'react-native';
+import { startSession, endSession, startVoiceSession, getCharacterSessions, getConversationTurns } from '../api';
+import { streamConversation } from '../api/client';
 import { Screen, TopBar } from '../components/Chrome';
 import { AmbientBg } from '../components/AmbientBg';
 import { RadialGlow } from '../components/RadialGlow';
@@ -25,6 +27,7 @@ type Msg = {
   memoryRefs?: string[];
   duration?: number;
   t?: string;
+  streaming?: boolean;
 };
 
 // ─── S09 FIRST CONVERSATION ──────────────────────────────────────────────
@@ -98,16 +101,29 @@ interface VoiceCallProps {
   accent?: string;
   orbIntensity?: number;
   minutesRemaining?: MinutesRemaining | 'critical';
+  userId?: string;
+  characterId?: string;
 }
 
 type Step = { st: OrbState; cap: string | null; ms: number; pill: string; memHint?: boolean };
 
-export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity = 1, minutesRemaining = 'normal' }: VoiceCallProps) {
+export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity = 1, minutesRemaining = 'normal', userId, characterId }: VoiceCallProps) {
   const [state, setState] = useState<OrbState>('idle');
   const [muted, setMuted] = useState(false);
   const [time, setTime] = useState(0);
   const [caption, setCaption] = useState<string | null>(null);
   const [pillText, setPillText] = useState('Reflecting on last session…');
+
+  // Fetch LiveKit token from backend when IDs are available.
+  // Full WebRTC connection requires @livekit/react-native (native setup) — see backend README.
+  useEffect(() => {
+    if (!userId || !characterId) return;
+    startVoiceSession(userId, characterId)
+      .then(res => {
+        console.log('[Voice] Session ready. Room:', res.room_name, '| URL:', res.livekit_url);
+      })
+      .catch(e => console.warn('[Voice] Session start failed:', e));
+  }, [userId, characterId]);
 
   const minutesLeft = minutesRemaining === 'low' ? 5 : minutesRemaining === 'critical' ? 1 : null;
 
@@ -306,6 +322,17 @@ function S13_VoiceNote({ onClose, onSend }: { onClose: () => void; onSend: (t: n
 }
 
 // ─── S14 CHAT ────────────────────────────────────────────────────────────
+
+// Shown only when no backend connection (pure prototype mode)
+const demoMsgs = (userName: string): Msg[] => [
+  { from: 'comp', text: `Hey ${userName}, how are you doing today?`, t: 'today' },
+  { from: 'user', text: "honestly, kinda nervous about tomorrow's interview" },
+  { from: 'comp', text: 'I remember you mentioning your interview is tomorrow. What part is making you most nervous?', memoryRefs: ['I remember you mentioning your interview is tomorrow'] },
+  { from: 'user', text: "the technical round. I haven't done one in years" },
+  { from: 'voiceUser', duration: 14 },
+  { from: 'comp', text: "That's totally understandable. Want to do a quick mock round right now? We can keep it light." },
+];
+
 interface ChatProps {
   go: Go;
   companion: Companion;
@@ -314,21 +341,20 @@ interface ChatProps {
   capHit?: boolean;
   userName?: string;
   firstRun?: boolean;
+  userId?: string;
+  characterId?: string;
 }
 
-export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, capHit = false, userName = 'Aria', firstRun = false }: ChatProps) {
+export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, capHit = false, userName = 'Aria', firstRun = false, userId, characterId }: ChatProps) {
+  // firstRun → fresh onboarding greeting
+  // characterId available → start empty, load real history from backend
+  // no characterId → show static demo (prototype mode)
   const [msgs, setMsgs] = useState<Msg[]>(
     firstRun
       ? [{ from: 'comp', text: `So — what's been on your mind lately?`, t: 'today' }]
-      : [
-        { from: 'comp', text: `Hey ${userName}, how are you doing today?`, t: 'today' },
-        { from: 'user', text: "honestly, kinda nervous about tomorrow's interview" },
-        { from: 'comp', text: 'I remember you mentioning your interview is tomorrow. What part is making you most nervous?', memoryRefs: ['I remember you mentioning your interview is tomorrow'] },
-        { from: 'user', text: "the technical round. I haven't done one in years" },
-        { from: 'voiceUser', duration: 14 },
-        { from: 'comp', text: "That's totally understandable. Want to do a quick mock round right now? We can keep it light." },
-      ],
+      : characterId ? [] : demoMsgs(userName),
   );
+  const [loadingHistory, setLoadingHistory] = useState(!firstRun && !!characterId);
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -337,6 +363,70 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
   const [showMemoryTip, setShowMemoryTip] = useState(false);
   const [seenFirstMemory, setSeenFirstMemory] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Active backend session ID (null when no backend or not yet started)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Start a backend text session when user + character IDs are available
+  useEffect(() => {
+    if (!userId || !characterId) return;
+    let mounted = true;
+    startSession(userId, characterId, 'text')
+      .then(res => {
+        if (!mounted) return;
+        setSessionId(res.session_id);
+        sessionRef.current = res.session_id;
+      })
+      .catch(e => console.warn('[Chat] Session start failed:', e));
+    return () => {
+      mounted = false;
+      abortRef.current?.abort();
+      if (sessionRef.current) {
+        endSession(sessionRef.current).catch(() => {});
+        sessionRef.current = null;
+      }
+    };
+  }, [userId, characterId]);
+
+  // Load conversation history from the last session that has turns.
+  // Iterates sessions newest-first and stops at the first non-empty one —
+  // this skips the brand-new empty session just created by startSession above.
+  useEffect(() => {
+    if (firstRun || !characterId) return;
+    let cancelled = false;
+    setLoadingHistory(true);
+
+    (async () => {
+      try {
+        const { sessions } = await getCharacterSessions(characterId);
+        for (const session of sessions) {
+          if (cancelled) return;
+          const { turns } = await getConversationTurns(session._id);
+          if (turns.length === 0) continue;
+          if (cancelled) return;
+          setMsgs(turns.map(t => ({
+            from: t.role === 'user' ? 'user' : 'comp',
+            text: t.content_text,
+          })));
+          return;
+        }
+        // No prior turns found — show a fresh greeting
+        if (!cancelled) {
+          setMsgs([{ from: 'comp', text: `Hey ${userName}, good to have you back.` }]);
+        }
+      } catch {
+        if (!cancelled) {
+          setMsgs([{ from: 'comp', text: `Hey ${userName}, good to have you back.` }]);
+        }
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [characterId, firstRun]);
 
   useEffect(() => {
     if (!showPhoneTip) return;
@@ -354,6 +444,56 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
     const userMsgCount = msgs.filter(m => m.from === 'user').length;
     setMsgs(m => [...m, { from: 'user', text }]);
     setDraft('');
+
+    // Use real backend when session is ready
+    if (sessionId && userId && characterId) {
+      // Append empty streaming placeholder
+      setMsgs(m => [...m, { from: 'comp', text: '', streaming: true }]);
+      abortRef.current?.abort();
+      abortRef.current = streamConversation(
+        { session_id: sessionId, character_id: characterId, user_id: userId, message: text },
+        {
+          onChunk: (content) => {
+            setMsgs(m => {
+              const updated = [...m];
+              const last = updated[updated.length - 1];
+              if (last?.streaming) updated[updated.length - 1] = { ...last, text: (last.text ?? '') + content };
+              return updated;
+            });
+          },
+          onDone: () => {
+            setMsgs(m => {
+              const updated = [...m];
+              const last = updated[updated.length - 1];
+              if (last?.streaming) updated[updated.length - 1] = { ...last, streaming: false };
+              return updated;
+            });
+            setShowBadge(true);
+            setTimeout(() => setShowBadge(false), 3000);
+          },
+          onCrisis: (content) => {
+            setMsgs(m => {
+              const updated = [...m];
+              const last = updated[updated.length - 1];
+              if (last?.streaming) updated[updated.length - 1] = { ...last, text: content, streaming: false };
+              return updated;
+            });
+          },
+          onError: (err) => {
+            console.warn('[Chat] Stream error:', err);
+            setMsgs(m => {
+              const updated = [...m];
+              const last = updated[updated.length - 1];
+              if (last?.streaming) updated[updated.length - 1] = { ...last, text: "(Something went wrong — please try again.)", streaming: false };
+              return updated;
+            });
+          },
+        },
+      );
+      return;
+    }
+
+    // Fallback: simulated response when backend session is not available
     setTyping(true);
     setTimeout(() => {
       const isFirstReply = firstRun && userMsgCount === 0;
@@ -414,13 +554,17 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 8 }}
       >
-        <Txt font="user" style={{ alignSelf: 'center', fontSize: 11, color: W.text3, paddingVertical: 4 }}>Today, 11:23 PM</Txt>
-        {msgs.map((m, i) =>
-          m.from === 'voiceUser' || m.from === 'voiceComp'
-            ? <VoiceNoteBubble key={i} from={m.from === 'voiceUser' ? 'user' : 'comp'} duration={m.duration} />
-            : <BubbleMem key={i} from={m.from} text={m.text || ''} memoryRefs={m.memoryRefs} accent={accent} onMemoryClick={openMemorySheet} />,
-        )}
-        {typing && <TypingDots />}
+        {loadingHistory
+          ? <TypingDots />
+          : <>
+              {msgs.map((m, i) =>
+                m.from === 'voiceUser' || m.from === 'voiceComp'
+                  ? <VoiceNoteBubble key={i} from={m.from === 'voiceUser' ? 'user' : 'comp'} duration={m.duration} />
+                  : <BubbleMem key={i} from={m.from} text={m.text || ''} memoryRefs={m.memoryRefs} accent={accent} onMemoryClick={openMemorySheet} />,
+              )}
+              {typing && <TypingDots />}
+            </>
+        }
         <View style={{ alignSelf: 'center', marginTop: 6 }}>
           <MemoryBadge show={showBadge} />
           {showMemoryTip && (
