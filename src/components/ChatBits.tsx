@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Pressable, TextInput, Animated, Easing, StyleProp, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Txt } from './Txt';
 import { NavIcon } from './NavIcon';
 import { MemoryRef } from './Atoms';
@@ -15,18 +16,36 @@ import { W, alpha } from '../theme/theme';
 export function Bubble({ from, text, memoryRefs = [] }: { from: string; text: string; memoryRefs?: string[] }) {
   const isUser = from === 'user';
   return (
-    <View
-      style={{
-        maxWidth: '78%', alignSelf: isUser ? 'flex-end' : 'flex-start',
-        backgroundColor: isUser ? W.surface2 : 'rgba(124,114,255,0.12)',
-        borderRadius: 16,
-        borderTopLeftRadius: isUser ? 16 : 4,
-        borderTopRightRadius: isUser ? 4 : 16,
-        paddingVertical: 10, paddingHorizontal: 14,
-      }}
-    >
-      <RefText text={text} memoryRefs={memoryRefs} isUser={isUser} />
-    </View>
+    <BubbleEntrance isUser={isUser}>
+      <View
+        style={{
+          maxWidth: '78%', alignSelf: isUser ? 'flex-end' : 'flex-start',
+          backgroundColor: isUser ? W.surface2 : 'rgba(124,114,255,0.12)',
+          borderRadius: 16,
+          borderTopLeftRadius: isUser ? 16 : 4,
+          borderTopRightRadius: isUser ? 4 : 16,
+          paddingVertical: 10, paddingHorizontal: 14,
+        }}
+      >
+        <RefText text={text} memoryRefs={memoryRefs} isUser={isUser} />
+      </View>
+    </BubbleEntrance>
+  );
+}
+
+// Shared per-bubble entrance — rises from the appropriate side with a soft spring.
+function BubbleEntrance({ isUser, children }: { isUser: boolean; children: React.ReactNode }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(v, { toValue: 1, useNativeDriver: true, tension: 110, friction: 14 }).start();
+  }, []);
+  const translateY = v.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
+  const translateX = v.interpolate({ inputRange: [0, 1], outputRange: [isUser ? 8 : -8, 0] });
+  const scale = v.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
+  return (
+    <Animated.View style={{ opacity: v, transform: [{ translateY }, { translateX }, { scale }], alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '78%' }}>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -80,23 +99,28 @@ export function BubbleMem({
   from: string; text: string; memoryRefs?: string[]; accent?: string; onMemoryClick?: (ref: string) => void;
 }) {
   const isUser = from === 'user';
-  const bg = isUser ? 'rgba(37,40,54,0.75)' : alpha(accent, '1a');
+  const bg = isUser ? 'rgba(37,40,54,0.78)' : alpha(accent, '1f');
   return (
-    <View
-      style={{
-        maxWidth: '78%', alignSelf: isUser ? 'flex-end' : 'flex-start',
-        backgroundColor: bg,
-        borderWidth: 1, borderColor: isUser ? 'rgba(255,255,255,0.04)' : alpha(accent, '26'),
-        borderRadius: 16,
-        borderTopLeftRadius: isUser ? 16 : 4,
-        borderTopRightRadius: isUser ? 4 : 16,
-        paddingVertical: 10, paddingHorizontal: 14,
-        borderLeftWidth: isUser ? 1 : 1,
-        borderLeftColor: isUser ? 'rgba(255,255,255,0.04)' : alpha(accent, '66'),
-      }}
-    >
-      <RefText text={text} memoryRefs={memoryRefs} isUser={isUser} onMemoryClick={onMemoryClick} asMemoryRef />
-    </View>
+    <BubbleEntrance isUser={isUser}>
+      <View
+        style={{
+          backgroundColor: bg,
+          borderWidth: 1, borderColor: isUser ? 'rgba(255,255,255,0.06)' : alpha(accent, '33'),
+          borderRadius: 18,
+          borderTopLeftRadius: isUser ? 18 : 6,
+          borderTopRightRadius: isUser ? 6 : 18,
+          paddingVertical: 11, paddingHorizontal: 15,
+          borderLeftWidth: 1,
+          borderLeftColor: isUser ? 'rgba(255,255,255,0.06)' : alpha(accent, '66'),
+          shadowColor: isUser ? '#000' : accent,
+          shadowOpacity: isUser ? 0.20 : 0.18,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+        }}
+      >
+        <RefText text={text} memoryRefs={memoryRefs} isUser={isUser} onMemoryClick={onMemoryClick} asMemoryRef />
+      </View>
+    </BubbleEntrance>
   );
 }
 
@@ -106,47 +130,79 @@ export function ChatInput({
 }: {
   draft: string; setDraft: (v: string) => void; onSend: () => void; onMic?: () => void; companionName: string;
 }) {
+  const [focused, setFocused] = useState(false);
+  const focusV = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(focusV, { toValue: focused ? 1 : 0, duration: 220, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: false }).start();
+  }, [focused]);
+  const borderColor = focusV.interpolate({ inputRange: [0, 1], outputRange: ['rgba(255,255,255,0.06)', 'rgba(139,130,255,0.45)'] });
+  const hasDraft = draft.trim().length > 0;
+
+  // Animated send button reveal
+  const sendV = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(sendV, { toValue: hasDraft ? 1 : 0, useNativeDriver: true, tension: 120, friction: 10 }).start();
+  }, [hasDraft]);
+  const sendScale = sendV;
+  const sendOpacity = sendV;
+
   return (
     <View
       style={{
-        borderTopWidth: 1, borderTopColor: 'rgba(124,114,255,0.10)',
+        borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)',
         paddingVertical: 10, paddingHorizontal: 12,
         flexDirection: 'row', alignItems: 'center', gap: 8,
-        backgroundColor: 'rgba(15,17,26,0.55)', overflow: 'hidden', zIndex: 2,
+        backgroundColor: 'rgba(12,14,20,0.78)', overflow: 'hidden', zIndex: 2,
       }}
     >
-      <BlurView intensity={32} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
-      <Pressable onPress={onMic} style={{ padding: 6 }}>
+      <BlurView intensity={50} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
+      {/* faint top sheen */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.06)' }} />
+
+      <Pressable onPress={onMic} android_ripple={{ color: alpha(W.primary, '22'), borderless: true }} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
         <NavIcon name="mic" color={W.text2} />
       </Pressable>
-      <View
+
+      <Animated.View
         style={{
-          flex: 1, backgroundColor: 'rgba(37,40,54,0.7)',
-          borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
-          height: 44, borderRadius: 22, justifyContent: 'center', paddingHorizontal: 16,
+          flex: 1, backgroundColor: 'rgba(30,32,46,0.85)',
+          borderWidth: 1, borderColor,
+          minHeight: 44, maxHeight: 110, borderRadius: 22, justifyContent: 'center', paddingHorizontal: 16,
+          shadowColor: W.primary, shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 0 },
         }}
       >
         <TextInput
           value={draft}
           onChangeText={setDraft}
           onSubmitEditing={onSend}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder={`Talk to ${companionName}…`}
           placeholderTextColor={W.text2}
-          style={{ color: W.text, fontFamily: 'Outfit_400Regular', fontSize: 15, padding: 0 }}
+          multiline
+          style={{ color: W.text, fontFamily: 'Outfit_400Regular', fontSize: 15, padding: 0, paddingTop: 10, paddingBottom: 10, maxHeight: 90 }}
         />
-      </View>
-      {draft.trim().length > 0 && (
+      </Animated.View>
+
+      <Animated.View style={{ transform: [{ scale: sendScale }], opacity: sendOpacity, width: hasDraft ? 42 : 0 }}>
         <Pressable
           onPress={onSend}
+          disabled={!hasDraft}
           style={{
-            backgroundColor: W.primary, width: 36, height: 36, borderRadius: 18,
+            width: 42, height: 42, borderRadius: 21, overflow: 'hidden',
             alignItems: 'center', justifyContent: 'center',
-            shadowColor: W.primary, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
+            shadowColor: W.primary, shadowOpacity: 0.55, shadowRadius: 18, shadowOffset: { width: 0, height: 6 },
           }}
         >
-          <NavIcon name="send" color="#fff" size={20} />
+          <LinearGradient
+            colors={['#A29CFF', '#736AF0']}
+            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+            style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}
+          />
+          <View pointerEvents="none" style={{ position: 'absolute', left: 1, top: 1, right: 1, height: 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)' }} />
+          <NavIcon name="send" color="#fff" size={18} />
         </Pressable>
-      )}
+      </Animated.View>
     </View>
   );
 }
@@ -178,12 +234,14 @@ export function VoiceNoteBubble({ from, duration = 12 }: { from: string; duratio
   const color = isUser ? W.text2 : W.primary;
   const bars = [4, 6, 10, 16, 12, 8, 14, 20, 16, 10, 18, 14, 8, 12, 16, 22, 14, 10, 16, 8, 6, 4];
   return (
+  <BubbleEntrance isUser={isUser}>
     <View
       style={{
-        maxWidth: '70%', alignSelf: isUser ? 'flex-end' : 'flex-start',
-        backgroundColor: isUser ? W.surface2 : 'rgba(124,114,255,0.12)',
-        borderRadius: 16, borderTopLeftRadius: isUser ? 16 : 4, borderTopRightRadius: isUser ? 4 : 16,
-        paddingVertical: 8, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
+        maxWidth: 260,
+        backgroundColor: isUser ? W.surface2 : 'rgba(124,114,255,0.14)',
+        borderRadius: 18, borderTopLeftRadius: isUser ? 18 : 6, borderTopRightRadius: isUser ? 6 : 18,
+        paddingVertical: 9, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10,
+        borderWidth: 1, borderColor: isUser ? 'rgba(255,255,255,0.06)' : alpha(W.primary, '22'),
       }}
     >
       <Pressable
@@ -199,6 +257,7 @@ export function VoiceNoteBubble({ from, duration = 12 }: { from: string; duratio
       </View>
       <Txt font="user" style={{ fontSize: 11, color: W.text2 }}>0:{String(duration).padStart(2, '0')}</Txt>
     </View>
+  </BubbleEntrance>
   );
 }
 

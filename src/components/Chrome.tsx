@@ -1,58 +1,38 @@
-// Chrome.tsx — StatusBar, HomeIndicator, Screen wrapper, TopBar.
-// Ported from system.jsx. The simulated iOS status bar (9:41) and home
-// indicator are kept exactly as designed, sitting inside the device safe area.
+// Chrome.tsx — Screen wrapper + TopBar. The fake iOS status bar and home
+// indicator have both been removed — the real device chrome handles these.
+// Safe-area insets keep content inside the notch / home-bar zones.
+// Screen also wraps in KeyboardAvoidingView so text inputs are never hidden.
 
-import React from 'react';
-import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, ViewStyle, StyleProp, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Rect, Path } from 'react-native-svg';
-import { Txt } from './Txt';
 import { AmbientBg } from './AmbientBg';
 import { W } from '../theme/theme';
 
-export function StatusBar({ light = true }: { light?: boolean }) {
-  const insets = useSafeAreaInsets();
-  const fg = light ? W.text : W.bg;
-  return (
-    <View
-      style={{
-        paddingTop: Math.max(insets.top, 14),
-        height: Math.max(insets.top, 14) + 33,
-        paddingHorizontal: 28,
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        zIndex: 5,
-      }}
-    >
-      <Txt font="user" weight={600} style={{ fontSize: 15, color: fg, letterSpacing: -0.3 }}>9:41</Txt>
-      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-        {/* signal */}
-        <Svg width={17} height={11} viewBox="0 0 17 11">
-          {[2, 5, 8, 11].map((h, i) => (
-            <Rect key={i} x={i * 4} y={11 - h} width={3} height={h} rx={0.5} fill={fg} />
-          ))}
-        </Svg>
-        {/* wifi */}
-        <Svg width={15} height={11} viewBox="0 0 15 11">
-          <Path d="M7.5 10.5l-1.5-2c-.4 0-1.6 0-1.6 0L7.5 10.5z M1 4 C 3 1.5, 12 1.5, 14 4 M3 6 C 4.5 4, 10.5 4, 12 6 M5 8 C 6 7, 9 7, 10 8" stroke={fg} strokeWidth={1.2} fill="none" strokeLinecap="round" />
-        </Svg>
-        {/* battery */}
-        <Svg width={27} height={12} viewBox="0 0 27 12">
-          <Rect x={0.5} y={0.5} width={22} height={11} rx={2.5} stroke={fg} opacity={0.5} fill="none" />
-          <Rect x={24} y={4} width={1.5} height={4} rx={0.5} fill={fg} opacity={0.5} />
-          <Rect x={2} y={2} width={18} height={8} rx={1.5} fill={fg} />
-        </Svg>
-      </View>
-    </View>
-  );
-}
+// Kept as a no-op shim so legacy imports (HomeIndicator, StatusBar) don't crash.
+export function HomeIndicator(_props: { color?: string }) { return null; }
+export function StatusBar(_props: { light?: boolean }) { return null; }
 
-export function HomeIndicator({ color = W.text }: { color?: string }) {
-  const insets = useSafeAreaInsets();
-  return (
-    <View style={{ height: 34 - Math.min(insets.bottom, 20) + Math.min(insets.bottom, 20), alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.max(8, insets.bottom > 0 ? 8 : 8) }}>
-      <View style={{ width: 134, height: 5, backgroundColor: color, opacity: 0.85, borderRadius: 3 }} />
-    </View>
-  );
+// Track whether the soft keyboard is currently visible (app-wide), plus its height.
+function useKeyboard(): { visible: boolean; height: number } {
+  const [visible, setVisible] = useState(false);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, (e) => {
+      setVisible(true);
+      setHeight(e.endCoordinates?.height ?? 0);
+    });
+    const h = Keyboard.addListener(hideEvt, () => {
+      setVisible(false);
+      setHeight(0);
+    });
+    return () => { s.remove(); h.remove(); };
+  }, []);
+  return { visible, height };
 }
 
 interface ScreenProps {
@@ -66,24 +46,65 @@ interface ScreenProps {
   ambient?: boolean;
   ambientIntensity?: number;
   style?: StyleProp<ViewStyle>;
+  /** Disable keyboard avoidance if a screen needs to manage it itself. */
+  noKeyboardAvoid?: boolean;
 }
 
 export function Screen({
   children,
   bg = W.bg,
-  statusBarLight = true,
-  hideHomeIndicator = false,
-  homeIndicatorColor,
   ambient = true,
   ambientIntensity = 1,
   style,
+  noKeyboardAvoid = false,
 }: ScreenProps) {
+  const insets = useSafeAreaInsets();
+  const { visible: kbVisible, height: kbHeight } = useKeyboard();
+
+  if (noKeyboardAvoid) {
+    return (
+      <View
+        style={[
+          {
+            flex: 1,
+            backgroundColor: bg,
+            overflow: 'hidden',
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+          style,
+        ]}
+      >
+        {ambient && <AmbientBg intensity={ambientIntensity} />}
+        <View style={{ flex: 1, minHeight: 0, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
+  // Keyboard handling:
+  //  - iOS: KeyboardAvoidingView with `padding` behavior pushes content above the keyboard;
+  //    no need to add manual padding ourselves.
+  //  - Android: the system auto-resizes the activity when soft input shows (adjustResize),
+  //    but Android also typically *includes* the keyboard in the safe-area inset.bottom.
+  //    We collapse `insets.bottom` to 0 while the keyboard is visible to remove a stale
+  //    gap between the chat input bar and the keyboard top edge.
+  const bottomPad = kbVisible ? 0 : insets.bottom;
+
   return (
-    <View style={[{ flex: 1, backgroundColor: bg, overflow: 'hidden' }, style]}>
+    <View
+      style={[
+        { flex: 1, backgroundColor: bg, overflow: 'hidden', paddingTop: insets.top },
+        style,
+      ]}
+    >
       {ambient && <AmbientBg intensity={ambientIntensity} />}
-      <StatusBar light={statusBarLight} />
-      <View style={{ flex: 1, minHeight: 0, zIndex: 1 }}>{children}</View>
-      {!hideHomeIndicator && <HomeIndicator color={homeIndicatorColor || W.text} />}
+      <KeyboardAvoidingView
+        style={{ flex: 1, zIndex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+      >
+        <View style={{ flex: 1, paddingBottom: bottomPad }}>{children}</View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -98,18 +119,30 @@ interface TopBarProps {
 }
 
 export function TopBar({ left, center, right, height = 56, bg = 'transparent', border = false }: TopBarProps) {
+  const isGlass = bg !== 'transparent';
   return (
     <View
       style={{
         height,
-        paddingHorizontal: 16,
+        paddingHorizontal: 20,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         backgroundColor: bg,
-        borderBottomWidth: border ? 1 : 0,
-        borderBottomColor: 'rgba(124,114,255,0.10)',
+        overflow: 'hidden',
         zIndex: 2,
       }}
     >
+      {isGlass && (
+        <BlurView pointerEvents="none" intensity={40} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
+      )}
+      {/* Premium gradient bottom border — fades in from edges */}
+      {border && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0)', 'rgba(139,130,255,0.20)', 'rgba(94,234,212,0.16)', 'rgba(139,130,255,0.20)', 'rgba(255,255,255,0)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 1 }}
+        />
+      )}
       <View style={{ minWidth: 32, flexDirection: 'row', alignItems: 'center' }}>{left}</View>
       <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>{center}</View>
       <View style={{ minWidth: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>{right}</View>
