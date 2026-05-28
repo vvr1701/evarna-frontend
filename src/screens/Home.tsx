@@ -19,33 +19,88 @@ import { Companion, Tier, ARCHETYPE_COLORS, ARCHETYPE_LABEL, VOICES } from '../d
 function CompanionCard({ companion, onChat, onCall, hero = false }: { companion: Companion; onChat: () => void; onCall: () => void; hero?: boolean }) {
   const accent = ARCHETYPE_COLORS[companion.archetype] || W.primary;
   const float = useFloat();
-  const halo = useCtaHalo();
 
   if (hero) {
     return (
       <Animated.View style={float}>
         <Pressable onPress={onChat}>
-          <View style={{ width: 320, maxWidth: 320, padding: 28, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(124,114,255,0.15)', alignItems: 'center', gap: 12, shadowColor: accent, shadowOpacity: 0.25, shadowRadius: 40, shadowOffset: { width: 0, height: 16 } }}>
-            <LinearGradient colors={['rgba(124,114,255,0.10)', 'rgba(26,29,46,0.55)']} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
-            <BlurView intensity={28} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
-            <Avatar name={companion.name} color={accent} size={80} image={companion.image} />
-            <View style={{ alignItems: 'center' }}>
-              <Txt font="comp" weight={600} style={{ fontSize: 22, color: W.text }}>{companion.name}</Txt>
-              <Txt font="user" style={{ fontSize: 12, color: W.text2, marginTop: 2 }}>{ARCHETYPE_LABEL[companion.archetype]}</Txt>
+          <View style={{
+            width: 320, maxWidth: 320, padding: 32, borderRadius: 28,
+            overflow: 'hidden',
+            borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+            alignItems: 'center', gap: 16,
+            backgroundColor: 'rgba(19,21,30,0.55)',
+            shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 30, shadowOffset: { width: 0, height: 16 },
+          }}>
+            <BlurView intensity={50} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
+            {/* Accent glow at top */}
+            <View pointerEvents="none" style={{
+              position: 'absolute', top: -100, left: '50%', marginLeft: -150,
+              width: 300, height: 200, borderRadius: 150,
+              backgroundColor: accent, opacity: 0.18,
+              shadowColor: accent, shadowOpacity: 0.5, shadowRadius: 60, shadowOffset: { width: 0, height: 0 },
+            }} />
+            {/* Top highlight */}
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' }} />
+            {/* Vertical gradient */}
+            <LinearGradient
+              colors={['rgba(255,255,255,0.04)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.10)']}
+              style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}
+            />
+
+            <Avatar name={companion.name} color={accent} size={88} image={companion.image} />
+            <View style={{ alignItems: 'center', gap: 4 }}>
+              <Txt font="comp" weight={600} style={{ fontSize: 24, color: W.cream, letterSpacing: -0.4 }}>{companion.name}</Txt>
+              <Txt font="user" weight={500} style={{ fontSize: 10, color: accent, letterSpacing: 2, textTransform: 'uppercase' }}>
+                {ARCHETYPE_LABEL[companion.archetype]}
+              </Txt>
             </View>
             {companion.memory ? (
-              <Txt font="user" style={{ fontSize: 12, color: W.accent, textAlign: 'center', maxWidth: 240, lineHeight: 17 }}>
-                <Txt font="user" style={{ color: W.accent, opacity: 0.7 }}>Remembers:</Txt> {companion.memory}
-              </Txt>
+              <View style={{
+                paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12,
+                backgroundColor: 'rgba(94,234,212,0.06)',
+                borderWidth: 1, borderColor: 'rgba(94,234,212,0.15)',
+                maxWidth: 250,
+              }}>
+                <Txt font="user" style={{ fontSize: 11, color: W.accent, textAlign: 'center', lineHeight: 16, letterSpacing: 0.2 }}>
+                  Remembers · {companion.memory}
+                </Txt>
+              </View>
             ) : null}
-            <Pressable
-              onPress={onCall}
-              style={{ marginTop: 8, backgroundColor: W.primary, borderRadius: 24, paddingVertical: 12, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: W.primary, shadowOpacity: 0.4, shadowRadius: 24, shadowOffset: { width: 0, height: 8 } }}
-            >
-              <NavIcon name="phone" color="#fff" size={20} />
-              <Txt font="user" weight={500} style={{ fontSize: 14, color: '#fff' }}>Call {companion.name}</Txt>
-              <Animated.View style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, borderRadius: 24, borderWidth: 2, borderColor: W.primary }, halo]} pointerEvents="none" />
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <Pressable
+                onPress={onChat}
+                style={{
+                  paddingVertical: 14, paddingHorizontal: 22,
+                  borderRadius: 24,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                }}
+              >
+                <NavIcon name="chat" color={W.text} size={16} />
+                <Txt font="user" weight={500} style={{ fontSize: 13, color: W.text, letterSpacing: 0.3 }}>Message</Txt>
+              </Pressable>
+              <Pressable
+                onPress={onCall}
+                style={{
+                  paddingVertical: 14, paddingHorizontal: 22, borderRadius: 24,
+                  backgroundColor: W.primary,
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  shadowColor: W.primary, shadowOpacity: 0.5, shadowRadius: 24, shadowOffset: { width: 0, height: 8 },
+                  overflow: 'hidden',
+                }}
+              >
+                <LinearGradient
+                  colors={['#A29CFF', '#736AF0']}
+                  start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                  style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}
+                />
+                <View pointerEvents="none" style={{ position: 'absolute', left: 1, top: 1, right: 1, height: 16, borderTopLeftRadius: 23, borderTopRightRadius: 23, backgroundColor: 'rgba(255,255,255,0.18)' }} />
+                <NavIcon name="phone" color="#fff" size={16} />
+                <Txt font="user" weight={600} style={{ fontSize: 13, color: '#fff', letterSpacing: 0.3 }}>Call</Txt>
+              </Pressable>
+            </View>
           </View>
         </Pressable>
       </Animated.View>
@@ -53,32 +108,54 @@ function CompanionCard({ companion, onChat, onCall, hero = false }: { companion:
   }
 
   return (
-    <Card onPress={onChat} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-      <Avatar name={companion.name} color={accent} size={48} image={companion.image} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-          <Txt font="comp" weight={600} style={{ fontSize: 16, color: W.text }}>{companion.name}</Txt>
-          <Txt font="user" style={{ fontSize: 12, color: W.text2 }}>· {ARCHETYPE_LABEL[companion.archetype]}</Txt>
+    <Pressable onPress={onChat}>
+      <View style={{
+        borderRadius: 20, padding: 18,
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        backgroundColor: 'rgba(19,21,30,0.55)',
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+        overflow: 'hidden',
+        shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
+      }}>
+        <BlurView intensity={36} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
+        {/* Accent stripe left */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 14, bottom: 14, width: 2, borderRadius: 1, backgroundColor: accent, opacity: 0.7 }} />
+        {/* Top highlight */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.10)' }} />
+
+        <Avatar name={companion.name} color={accent} size={52} image={companion.image} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+            <Txt font="comp" weight={600} style={{ fontSize: 17, color: W.cream, letterSpacing: -0.2 }}>{companion.name}</Txt>
+            <Txt font="user" weight={500} style={{ fontSize: 9, color: accent, letterSpacing: 1.5, textTransform: 'uppercase' }}>{ARCHETYPE_LABEL[companion.archetype]}</Txt>
+          </View>
+          {companion.memory ? (
+            <Txt font="user" numberOfLines={1} style={{ marginTop: 4, fontSize: 12, color: W.accent, opacity: 0.85 }}>
+              {companion.memory}
+            </Txt>
+          ) : null}
+          <Txt font="user" style={{ marginTop: 4, fontSize: 11, color: companion.pending ? W.secondary : W.textMuted, letterSpacing: 0.3 }}>
+            {companion.pending ? 'Has something on their mind' : companion.lastTalked}
+          </Txt>
         </View>
-        {companion.memory ? (
-          <Txt font="user" numberOfLines={1} style={{ marginTop: 4, fontSize: 12, color: W.accent }}>Remembers: {companion.memory}</Txt>
-        ) : null}
-        <Txt font="user" style={{ marginTop: 2, fontSize: 11, color: companion.pending ? W.secondary : W.text2 }}>
-          {companion.pending ? 'Wants to ask you something' : companion.lastTalked}
-        </Txt>
+        <View style={{ alignItems: 'center' }}>
+          {companion.pending && (
+            <View style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: W.primary, zIndex: 2, shadowColor: W.primary, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }} />
+          )}
+          <Pressable
+            onPress={onCall}
+            style={{
+              backgroundColor: 'rgba(139,130,255,0.12)',
+              borderWidth: 1, borderColor: 'rgba(139,130,255,0.25)',
+              width: 42, height: 42, borderRadius: 21,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <NavIcon name="phone" color={W.primary} size={18} />
+          </Pressable>
+        </View>
       </View>
-      <View style={{ alignItems: 'center' }}>
-        {companion.pending && (
-          <View style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: W.primary, zIndex: 2, shadowColor: W.primary, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }} />
-        )}
-        <Pressable
-          onPress={onCall}
-          style={{ backgroundColor: 'rgba(124,114,255,0.15)', borderWidth: 1, borderColor: 'rgba(124,114,255,0.20)', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <NavIcon name="phone" color={W.primary} size={20} />
-        </Pressable>
-      </View>
-    </Card>
+    </Pressable>
   );
 }
 
@@ -102,37 +179,67 @@ export function S10_Home({ go, tier, companions, onSelectCompanion, onCallCompan
   return (
     <Screen>
       <TopBar
-        left={<Txt font="comp" weight={700} style={{ fontSize: 18, color: W.primary, letterSpacing: -0.36 }}>whisper</Txt>}
+        height={64}
+        left={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{
+              width: 6, height: 6, borderRadius: 3,
+              backgroundColor: W.accent,
+              shadowColor: W.accent, shadowOpacity: 1, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
+            }} />
+            <Txt font="comp" weight={700} style={{ fontSize: 17, color: W.cream, letterSpacing: -0.4 }}>whisper</Txt>
+          </View>
+        }
         right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Pressable style={{ padding: 4 }}><NavIcon name="bell" color={W.text2} /></Pressable>
-            <Pressable onPress={() => go('settings')} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(37,40,54,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' }}>
-              <Txt font="user" weight={600} style={{ fontSize: 12, color: W.text }}>{userName[0]}</Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <Pressable style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(19,21,30,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
+              <NavIcon name="bell" color={W.text2} size={18} />
+            </Pressable>
+            <Pressable onPress={() => go('settings')} style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(19,21,30,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' }}>
+              <Txt font="user" weight={600} style={{ fontSize: 13, color: W.text }}>{userName[0]}</Txt>
             </Pressable>
           </View>
         }
       />
-      <ScrollView style={{ flex: 1 }}>
-        <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        {/* Editorial greeting block */}
+        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 }}>
+          <Txt font="user" weight={500} style={{ fontSize: 10, color: W.text3, letterSpacing: 2.2, textTransform: 'uppercase', marginBottom: 12 }}>
+            {dateStr}
+          </Txt>
           <Animated.View style={glow}>
-            <Txt font="comp" weight={600} style={{ fontSize: 24, color: W.text, letterSpacing: -0.36 }}>{greeting}</Txt>
+            <Txt font="comp" weight={500} style={{ fontSize: 30, color: W.cream, letterSpacing: -0.8, lineHeight: 38 }}>{greeting}</Txt>
           </Animated.View>
-          <Txt font="user" style={{ marginTop: 4, fontSize: 13, color: W.text2 }}>{dateStr}</Txt>
         </View>
-        <View style={{ padding: 16, gap: 12, alignItems: isSingle ? 'center' : 'stretch', justifyContent: isSingle ? 'center' : 'flex-start', minHeight: isSingle ? 400 : undefined }}>
+
+        {/* Companions section label */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Txt font="user" weight={600} style={{ fontSize: 11, color: W.text2, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+            Your companions
+          </Txt>
+          {companions.length > 1 && (
+            <Txt font="user" weight={500} style={{ fontSize: 11, color: W.textMuted, letterSpacing: 0.4 }}>
+              {companions.length} active
+            </Txt>
+          )}
+        </View>
+
+        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12, alignItems: isSingle ? 'center' : 'stretch', justifyContent: isSingle ? 'center' : 'flex-start', minHeight: isSingle ? 400 : undefined }}>
           {companions.map(c => (
             <CompanionCard key={String(c.id)} companion={c} hero={isSingle} onChat={() => onSelectCompanion(c)} onCall={() => onCallCompanion(c)} />
           ))}
           {tier === 'free' && companions.length === 1 && (
-            <Pressable onPress={() => go('add-companion')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, marginTop: 24 }}>
-              <Txt font="user" style={{ fontSize: 14, color: W.secondary }}>Explore more companions</Txt>
-              <NavIcon name="right" color={W.secondary} size={20} />
+            <Pressable onPress={() => go('add-companion')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, marginTop: 32 }}>
+              <Txt font="user" weight={500} style={{ fontSize: 13, color: W.secondary, letterSpacing: 0.3 }}>Explore more companions</Txt>
+              <NavIcon name="right" color={W.secondary} size={16} />
             </Pressable>
           )}
           {tier !== 'free' && companions.length < maxCompanions && (
-            <Pressable onPress={() => go('add-companion')} style={{ borderWidth: 1.5, borderColor: 'rgba(124,114,255,0.15)', borderStyle: 'dashed', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <NavIcon name="plus" color={W.text2} size={20} />
-              <Txt font="user" style={{ fontSize: 14, color: W.text2 }}>Add companion</Txt>
+            <Pressable onPress={() => go('add-companion')} style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderStyle: 'dashed', borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' }}>
+                <NavIcon name="plus" color={W.text2} size={16} />
+              </View>
+              <Txt font="user" weight={500} style={{ fontSize: 14, color: W.text2, letterSpacing: 0.3 }}>Add a companion</Txt>
             </Pressable>
           )}
         </View>

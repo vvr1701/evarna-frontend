@@ -2,7 +2,7 @@
 // router. Keeps the exact go(screen) + tab behavior of the prototype.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { W } from '../theme/theme';
 import { ScreenName } from './types';
@@ -26,7 +26,7 @@ import {
   Character,
 } from '../screens/Studio';
 import { S19_SandboxHome, S20_SandboxSession } from '../screens/Sandbox';
-import { S21_Settings, S22_Memories, S23_Paywall, S24_TopUp } from '../screens/Settings';
+import { S21_Settings, S22_Memories, S23_Paywall, S24_TopUp, S_UserProfile } from '../screens/Settings';
 import {
   S25_NotifPermission, S26_CompanionEdit, S27_StartCallDepleted,
   S28_CrisisChat, S29_Recap, S30_Login,
@@ -52,6 +52,11 @@ export default function App() {
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [sandboxMode, setSandboxMode] = useState<SandboxMode | null>(null);
   const [paywallTrigger] = useState('voice');
+  const [isNewUser, setIsNewUser] = useState(false);
+  // Track where modal/edit screens were opened from so the back button returns correctly.
+  const [profileBack, setProfileBack] = useState<ScreenName>('chat');
+  const [paywallBack, setPaywallBack] = useState<ScreenName>('home');
+  const [topupBack, setTopupBack] = useState<ScreenName>('home');
 
   // Onboarding-collected
   const [voicePick, setVoicePick] = useState<string | null>(null);
@@ -132,13 +137,25 @@ export default function App() {
   // Static placeholder companions (Atlas, Nova, etc.) should get prototype mode (no backend).
   const activeCharacterId = currentCompanion.id === characterId ? characterId : null;
 
-  // Navigation helper — mirrors prototype go()
+  // Navigation helper — mirrors prototype go() and remembers origin for modal-like screens.
   const go = (s: ScreenName) => {
+    // Capture the back-target BEFORE we change screen, so profile/paywall/topup return correctly.
+    if (s === 'profile' || s === 'user-profile') setProfileBack(screen);
+    if (s === 'paywall') setPaywallBack(screen);
+    if (s === 'topup') setTopupBack(screen);
     setScreen(s);
     if (s === 'home' || s === 'first-chat') setActiveTab('home');
     if (s === 'studio' || s === 'scenario-setup' || s === 'studio-session' || s === 'character-creator') setActiveTab('studio');
     if (s === 'sandbox' || s === 'sandbox-session') setActiveTab('sandbox');
-    if (s === 'settings' || s === 'memories' || s === 'topup') setActiveTab('settings');
+    if (s === 'settings' || s === 'memories' || s === 'user-profile') setActiveTab('settings');
+    // paywall / topup keep whatever tab was active so the underlay matches the origin
+  };
+
+  // Allow Settings to set the active companion before opening profile.
+  const openCompanionProfile = (c: Companion) => {
+    setActiveCompanion(c);
+    setProfileBack(screen);
+    setScreen('profile');
   };
 
   const onTabChange = (tab: TabId) => {
@@ -169,7 +186,6 @@ export default function App() {
       .then(res => {
         setUserId(res.user_id);
         setCharacterId(res.character_id);
-        // Immediately surface companion on home screen (persist effect fires separately)
         const newCompanion: Companion = {
           id: res.character_id,
           name,
@@ -199,7 +215,7 @@ export default function App() {
 
   const renderScreen = () => {
     switch (screen) {
-      case 'splash': return <S01_Splash go={go} />;
+      case 'splash': return <S01_Splash go={go} goNew={() => { setIsNewUser(true); go('login'); }} />;
       case 'age': return <S02_Age go={go} onDob={setDateOfBirth} />;
       case 'disclosure': return <S03_Disclosure go={go} />;
       case 'pronouns': return <S05_Pronouns go={go} onGender={setUserGender} />;
@@ -217,7 +233,8 @@ export default function App() {
       case 'call': return <S12_VoiceCall go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} orbIntensity={1} minutesRemaining={t.minutesRemaining} userId={activeCharacterId ? userId ?? undefined : undefined} characterId={activeCharacterId ?? undefined} />;
       case 'chat': return <S14_Chat go={(s) => go(s)} companion={currentCompanion} accent={t.orbHue} capHit={t.capHit} userName={t.userName} openMemorySheet={() => {}} userId={activeCharacterId ? userId ?? undefined : undefined} characterId={activeCharacterId ?? undefined} />;
       case 'crisis': return <S28_CrisisChat go={go} companion={currentCompanion} />;
-      case 'profile': return <S26_CompanionEdit go={(s) => go(s)} companion={currentCompanion} onDelete={() => {}} />;
+      case 'profile': return <S26_CompanionEdit go={(s) => go(s)} companion={currentCompanion} onDelete={() => {}} backTo={profileBack} />;
+      case 'user-profile': return <S_UserProfile go={(s) => go(s)} userName={t.userName} userEmail={`${t.userName.toLowerCase()}@whisper.app`} backTo={profileBack} />;
       case 'recap': return (
         <View style={{ flex: 1 }}>
           {renderHome(false)}
@@ -236,29 +253,63 @@ export default function App() {
       case 'character-creator': return <S18_CharacterCreator go={go} onSave={(c) => setCharacters(cs => [...cs, c])} />;
       case 'sandbox': return <S19_SandboxHome go={go} comingSoon={t.sandboxComingSoon} isMinor={isMinor} openMode={(m) => { setSandboxMode(m); setScreen('sandbox-session'); }} />;
       case 'sandbox-session': return <S20_SandboxSession go={go} mode={sandboxMode || SANDBOX_MODES[0]} />;
-      case 'settings': return <S21_Settings go={go} tier={t.tier} companions={companions} userName={t.userName} userEmail={`${t.userName.toLowerCase()}@whisper.app`} settings={settings} setSettings={setSettings} />;
+      case 'settings': return <S21_Settings go={go} tier={t.tier} companions={companions} userName={t.userName} userEmail={`${t.userName.toLowerCase()}@whisper.app`} settings={settings} setSettings={setSettings} openCompanionProfile={openCompanionProfile} />;
       case 'memories': return <S22_Memories go={go} characterId={characterId ?? undefined} companionName={currentCompanion.name} />;
-      case 'paywall': return <S23_Paywall go={go} trigger={paywallTrigger} currentTier={t.tier} />;
-      case 'topup': return <S24_TopUp go={go} />;
-      case 'login': return <S30_Login go={go} />;
+      case 'paywall': return <S23_Paywall go={go} trigger={paywallTrigger} currentTier={t.tier} backTo={paywallBack} />;
+      case 'topup': return <S24_TopUp go={go} backTo={topupBack} />;
+      case 'login': return <S30_Login go={go} isNew={isNewUser} />;
       default: return renderHome(true);
     }
   };
 
-  const showNav = ['home', 'studio', 'sandbox', 'settings', 'memories', 'topup', 'recap'].includes(screen);
-  const isModalOverHome = screen === 'paywall' || screen === 'topup' || screen === 'callDepleted';
+  const showNav = ['home', 'studio', 'sandbox', 'settings', 'memories', 'recap'].includes(screen);
+  const isModal = screen === 'paywall' || screen === 'topup' || screen === 'callDepleted';
+
+  // Render the appropriate underlay for modal sheets so backdrops match the screen they were launched from.
+  const renderUnderlay = () => {
+    const origin = screen === 'paywall' ? paywallBack : screen === 'topup' ? topupBack : 'home';
+    if (origin === 'settings') {
+      return <S21_Settings go={() => {}} tier={t.tier} companions={companions} userName={t.userName} userEmail={`${t.userName.toLowerCase()}@whisper.app`} settings={settings} setSettings={setSettings} openCompanionProfile={() => {}} />;
+    }
+    return renderHome(false);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: W.bg }}>
-      {isModalOverHome ? (
+      {isModal ? (
         <>
-          {renderHome(false)}
+          {renderUnderlay()}
           {renderScreen()}
         </>
       ) : (
-        <View style={{ flex: 1 }}>{renderScreen()}</View>
+        <ScreenTransition routeKey={screen}>
+          <View style={{ flex: 1 }}>{renderScreen()}</View>
+        </ScreenTransition>
       )}
       {showNav ? <BottomNav active={activeTab} onChange={onTabChange} sandboxComingSoon={t.sandboxComingSoon} /> : null}
     </View>
+  );
+}
+
+// ─── ScreenTransition ───────────────────────────────────────────────────
+// Fades + lifts a screen on mount. Keyed on the route name so any navigation
+// re-runs the entrance for a buttery feel. Uses native driver for 60fps.
+function ScreenTransition({ routeKey, children }: { routeKey: string; children: React.ReactNode }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    v.setValue(0);
+    Animated.timing(v, {
+      toValue: 1,
+      duration: 320,
+      easing: Easing.bezier(0.22, 1, 0.36, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [routeKey]);
+  const translateY = v.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
+  const scale = v.interpolate({ inputRange: [0, 1], outputRange: [0.992, 1] });
+  return (
+    <Animated.View style={{ flex: 1, opacity: v, transform: [{ translateY }, { scale }] }}>
+      {children}
+    </Animated.View>
   );
 }

@@ -20,7 +20,7 @@ import { Pill, PrimaryButton } from '../components/Atoms';
 import { BubbleMem, ChatInput } from '../components/ChatBits';
 import { useEntrance } from '../theme/animations';
 import { W, alpha } from '../theme/theme';
-import { Go } from '../navigation/types';
+import { Go, ScreenName } from '../navigation/types';
 import { Companion, ARCHETYPE_COLORS, ARCHETYPE_LABEL, MEM_TYPES } from '../data/config';
 
 // ─── S25 — NOTIFICATION PERMISSION (companion-led ask) ──────────────────────
@@ -68,8 +68,8 @@ export function S25_NotifPermission({ go, companion }: { go: Go; companion: Comp
 type TraitKey = 'warmth' | 'humor' | 'directness' | 'energy' | 'formality';
 
 export function S26_CompanionEdit({
-  go, companion, onDelete,
-}: { go: Go; companion: Companion; onChange?: (c: Companion) => void; onDelete?: () => void }) {
+  go, companion, onDelete, backTo = 'chat',
+}: { go: Go; companion: Companion; onChange?: (c: Companion) => void; onDelete?: () => void; backTo?: ScreenName }) {
   const [name, setName] = useState(companion.name);
   const [editName, setEditName] = useState(false);
   const [archetype] = useState(companion.archetype || 'mentor');
@@ -100,7 +100,7 @@ export function S26_CompanionEdit({
   return (
     <Screen label="26 Companion Profile">
       <TopBar
-        left={<Pressable onPress={() => go('chat')}><NavIcon name="back" color={W.text2} /></Pressable>}
+        left={<Pressable onPress={() => go(backTo)} hitSlop={12}><NavIcon name="back" color={W.text2} /></Pressable>}
         center={<Txt font="comp" weight={600} style={{ fontSize: 16, color: W.text }}>Edit {companion.name}</Txt>}
       />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 18 }} showsVerticalScrollIndicator={false}>
@@ -568,7 +568,7 @@ function RecapSection({ title, children }: { title: string; children: React.Reac
 }
 
 // ─── S30 — LOGIN / RETURNING USER ───────────────────────────────────────────
-export function S30_Login({ go }: { go: Go }) {
+export function S30_Login({ go, isNew = false }: { go: Go; isNew?: boolean }) {
   const [showEmail, setShowEmail] = useState(false);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
@@ -581,14 +581,18 @@ export function S30_Login({ go }: { go: Go }) {
         <View style={{ marginTop: '18%', alignItems: 'center' }}>
           <Txt font="comp" weight={700} style={{ fontSize: 34, color: W.primary, letterSpacing: -1 }}>whisper</Txt>
           <Animated.View style={welcome}>
-            <Txt font="comp" weight={600} style={{ marginTop: 14, fontSize: 20, color: W.text }}>Welcome back</Txt>
+            <Txt font="comp" weight={600} style={{ marginTop: 14, fontSize: 20, color: W.text }}>
+              {isNew ? 'Create your account' : 'Welcome back'}
+            </Txt>
           </Animated.View>
-          <Txt font="user" style={{ marginTop: 6, fontSize: 13, color: W.text2 }}>Everything's right where you left it.</Txt>
+          <Txt font="user" style={{ marginTop: 6, fontSize: 13, color: W.text2 }}>
+            {isNew ? 'Your companion is waiting for you.' : 'Everything\'s right where you left it.'}
+          </Txt>
         </View>
 
         <View style={{ marginTop: 44, gap: 12 }}>
           {/* Apple */}
-          <Pressable style={{ width: '100%', height: 52, backgroundColor: '#F0F0F5', borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 16 }}>
+          <Pressable onPress={() => go('age')} style={{ width: '100%', height: 52, backgroundColor: '#F0F0F5', borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 16 }}>
             <Svg width={16} height={20} viewBox="0 0 24 28" fill="#000">
               <Path d="M18.7 14.6c0-3.2 2.6-4.8 2.7-4.9-1.5-2.2-3.8-2.5-4.6-2.5-2-.2-3.8 1.1-4.8 1.1-1 0-2.5-1.1-4.2-1.1-2.2 0-4.2 1.3-5.3 3.2-2.3 3.9-.6 9.7 1.6 12.9 1.1 1.6 2.4 3.3 4.1 3.3 1.7-.1 2.3-1.1 4.3-1.1s2.6 1.1 4.3 1c1.8 0 2.9-1.6 4-3.2 1.3-1.8 1.8-3.6 1.8-3.7-.1-.1-3.5-1.3-3.5-5z M15.7 5c.9-1.1 1.5-2.6 1.3-4.1-1.3.1-2.8.9-3.7 2-.8 1-1.6 2.5-1.4 3.9 1.4.1 2.9-.7 3.8-1.8z" />
             </Svg>
@@ -597,7 +601,7 @@ export function S30_Login({ go }: { go: Go }) {
           {/* Google */}
           <View style={{ width: '100%', height: 52, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
             <BlurView intensity={20} tint="dark" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} />
-            <Pressable style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(26,29,46,0.6)' }}>
+            <Pressable onPress={() => go('age')} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(26,29,46,0.6)' }}>
               <Svg width={18} height={18} viewBox="0 0 18 18">
                 <Path fill="#4285F4" d="M17.6 9.2c0-.6-.1-1.2-.2-1.7H9v3.3h4.8c-.2 1.1-.9 2.1-1.8 2.7v2.3h3c1.7-1.6 2.6-3.9 2.6-6.6z" />
                 <Path fill="#34A853" d="M9 18c2.4 0 4.5-.8 6-2.2l-3-2.3c-.8.5-1.9.9-3 .9-2.3 0-4.3-1.6-5-3.7H1v2.3C2.5 15.9 5.5 18 9 18z" />
@@ -648,7 +652,7 @@ export function S30_Login({ go }: { go: Go }) {
         <View style={{ flex: 1 }} />
         <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
           <Txt font="user" style={{ fontSize: 13, color: W.text2 }}>Don't have an account? </Txt>
-          <Pressable onPress={() => go('splash')}><Txt font="user" weight={500} style={{ fontSize: 13, color: W.primary }}>Get started</Txt></Pressable>
+          <Pressable onPress={() => go('age')}><Txt font="user" weight={500} style={{ fontSize: 13, color: W.primary }}>Get started</Txt></Pressable>
         </View>
       </View>
       <HomeIndicator />

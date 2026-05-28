@@ -25,7 +25,7 @@ export const CONFIG: AppConfig = {
   companionName: 'Sage',
   callState: 'auto',
   sandboxComingSoon: false,
-  orbHue: '#7C72FF',
+  orbHue: '#8B82FF',
   showFirstChat: true,
   capHit: false,
   minutesRemaining: 'normal',

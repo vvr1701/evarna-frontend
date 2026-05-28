@@ -2,7 +2,7 @@
 // index.html (orbBreathe, orbSpin, dotPulse, wave, slideUp, weightIn, etc.).
 // All use the JS driver where interpolating non-transform/opacity props.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing } from 'react-native';
 
 /** A looping 0->1->0 (or 0->1) driver value. */
@@ -75,7 +75,8 @@ export function useCtaHalo(durationMs = 3500) {
   return { transform: [{ scale }], opacity };
 }
 
-/** A one-shot entrance: fade+translateY. Mirrors weightIn / slideUp / bubbleRise. */
+/** A one-shot entrance: fade+translateY. Mirrors weightIn / slideUp / bubbleRise.
+ *  Uses a soft "snap" easing (cubic-out bezier) for buttery feel. */
 export function useEntrance(opts?: { fromTranslateY?: number; durationMs?: number; delayMs?: number }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -83,7 +84,7 @@ export function useEntrance(opts?: { fromTranslateY?: number; durationMs?: numbe
       Animated.timing(v, {
         toValue: 1,
         duration: opts?.durationMs ?? 600,
-        easing: Easing.out(Easing.ease),
+        easing: Easing.bezier(0.22, 1, 0.36, 1),
         useNativeDriver: true,
       }).start();
     }, opts?.delayMs ?? 0);
@@ -92,6 +93,33 @@ export function useEntrance(opts?: { fromTranslateY?: number; durationMs?: numbe
   const translateY = v.interpolate({ inputRange: [0, 1], outputRange: [opts?.fromTranslateY ?? 20, 0] });
   const opacity = v;
   return { opacity, transform: [{ translateY }] };
+}
+
+/** Animate a number counting up from 0 to `to` over `duration` ms. Returns the current rounded value. */
+export function useCountUp(to: number, duration = 1200, delay = 0): number {
+  const v = useRef(new Animated.Value(0)).current;
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    v.setValue(0);
+    const sub = v.addListener(({ value }) => setN(Math.round(value * to)));
+    const t = setTimeout(() => {
+      Animated.timing(v, { toValue: 1, duration, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: false }).start();
+    }, delay);
+    return () => { clearTimeout(t); v.removeListener(sub); };
+  }, [to, duration, delay]);
+  return n;
+}
+
+/** A pressable scale-down spring for tap feedback. Returns animated style + handlers. */
+export function usePressScale(scaleTo = 0.96) {
+  const v = useRef(new Animated.Value(1)).current;
+  const onPressIn = () => {
+    Animated.spring(v, { toValue: scaleTo, useNativeDriver: true, speed: 50, bounciness: 0 }).start();
+  };
+  const onPressOut = () => {
+    Animated.spring(v, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 8 }).start();
+  };
+  return { style: { transform: [{ scale: v }] }, onPressIn, onPressOut };
 }
 
 /** greetingGlow proxy — a brief fade-in (text-shadow can't animate in RN). */

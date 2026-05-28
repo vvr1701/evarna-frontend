@@ -6,7 +6,7 @@ export type ScreenName =
   | 'splash' | 'age' | 'disclosure' | 'pronouns' | 'comm' | 'handoff'
   | 'archetype' | 'voice' | 'name' | 'meet' | 'notif' | 'first-chat'
   | 'home' | 'callDepleted' | 'add-companion' | 'call' | 'chat' | 'crisis'
-  | 'profile' | 'recap' | 'studio' | 'scenario-setup' | 'studio-session'
+  | 'profile' | 'user-profile' | 'recap' | 'studio' | 'scenario-setup' | 'studio-session'
   | 'character-creator' | 'sandbox' | 'sandbox-session' | 'settings'
   | 'memories' | 'paywall' | 'topup' | 'login';
 
