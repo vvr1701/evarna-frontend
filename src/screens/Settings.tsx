@@ -16,8 +16,9 @@ import { NavIcon } from '../components/NavIcon';
 import { Txt } from '../components/Txt';
 import { Card, Toggle } from '../components/Atoms';
 import { W, alpha } from '../theme/theme';
-import { ARCHETYPE_LABEL, MEM_TYPES, SAMPLE_MEMORIES, Companion, Tier } from '../data/config';
+import { ARCHETYPE_LABEL, MEM_TYPES, SAMPLE_MEMORIES, Companion, Tier, Memory } from '../data/config';
 import { Go } from '../navigation/types';
+import { getMemories, deleteMemory, deleteAllMemories, ApiMemory } from '../api';
 
 export interface AppSettings {
   dailyCheckin: boolean;
@@ -180,11 +181,47 @@ function Row({ label, right, onPress }: { label: React.ReactNode; right?: React.
   return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
 }
 
+// Extended display type carries MongoDB _id for delete calls
+type DisplayMemory = Memory & { _mongoId?: string };
+
+function toDisplayMemory(m: ApiMemory, idx: number, via: string): DisplayMemory {
+  return {
+    id: idx,
+    type: m.type,
+    text: m.content,
+    via,
+    date: new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    _mongoId: m._id,
+  };
+}
+
 // ─── S22 MEMORIES LIST ───────────────────────────────────────────────────
-export function S22_Memories({ go }: { go: Go }) {
+export function S22_Memories({ go, characterId, companionName }: { go: Go; characterId?: string; companionName?: string }) {
   const [filter, setFilter] = useState('all');
-  const filtered = SAMPLE_MEMORIES.filter(m => filter === 'all' || m.type === filter);
+  const [memories, setMemories] = useState<DisplayMemory[]>(SAMPLE_MEMORIES);
   const tabs: [string, string][] = [['all', 'All'], ['fact', 'Facts'], ['emotion', 'Emotions'], ['event', 'Events'], ['preference', 'Preferences']];
+  const via = companionName ?? 'Your companion';
+
+  // Fetch real memories when characterId is available; re-fetch on filter change
+  useEffect(() => {
+    if (!characterId) return;
+    getMemories(characterId, filter !== 'all' ? filter : undefined)
+      .then(data => setMemories(data.map((m, i) => toDisplayMemory(m, i, via))))
+      .catch(() => { /* keep existing memories on error */ });
+  }, [characterId, filter]);
+
+  const filtered = characterId
+    ? memories
+    : memories.filter(m => filter === 'all' || m.type === filter);
+
+  const handleDelete = (mem: DisplayMemory) => {
+    // Optimistic remove
+    setMemories(prev => prev.filter(m => m.id !== mem.id));
+    if (characterId && mem._mongoId) {
+      deleteMemory(mem._mongoId).catch(() => {});
+    }
+  };
+
   return (
     <Screen>
       <TopBar
@@ -215,7 +252,7 @@ export function S22_Memories({ go }: { go: Go }) {
                 <Txt font="user" style={{ fontSize: 14, color: W.text, lineHeight: 20 }}>{m.text}</Txt>
                 <Txt font="user" style={{ marginTop: 4, fontSize: 11, color: W.text2 }}>Learned {m.date} via {m.via}</Txt>
               </View>
-              <Pressable style={{ padding: 2, opacity: 0.5 }}>
+              <Pressable onPress={() => handleDelete(m as DisplayMemory)} style={{ padding: 2, opacity: 0.5 }}>
                 <NavIcon name="trash" color={W.text2} size={18} />
               </Pressable>
             </View>
@@ -223,7 +260,14 @@ export function S22_Memories({ go }: { go: Go }) {
         })}
       </ScrollView>
       <View style={{ paddingTop: 8, paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: W.surface2 }}>
-        <Pressable style={{ width: '100%', height: 40, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable
+          onPress={() => {
+            if (!characterId) return;
+            setMemories([]);
+            deleteAllMemories(characterId).catch(() => {});
+          }}
+          style={{ width: '100%', height: 40, alignItems: 'center', justifyContent: 'center' }}
+        >
           <Txt font="user" weight={500} style={{ fontSize: 13, color: W.danger }}>Delete all memories</Txt>
         </Pressable>
       </View>
