@@ -2,6 +2,7 @@
   "expo": {
     "name": "Whisper",
     "slug": "whisper-rn",
+    "scheme": "whisper",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,25 +16,32 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.whisper.companion",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Whisper uses your microphone for voice conversations with your companion.",
+        "NSMicrophoneUsageDescription": "Whisper needs your microphone to let you talk to your companion during voice calls.",
         "UIBackgroundModes": [
           "audio",
           "voip"
         ]
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "package": "app.whisper.companion",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F111A"
+      },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.BLUETOOTH",
-        "android.permission.INTERNET"
-      ],
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F111A"
-      }
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -49,6 +57,11 @@
       ],
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ef13714d-382a-4849-9de3-a47f6286e9cf"
+      }
+    }
   }
 }

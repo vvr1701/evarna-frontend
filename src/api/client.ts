@@ -5,10 +5,14 @@
 export const BASE_URL = 'http://192.168.1.10:3000';
 export const API_BASE = `${BASE_URL}/api/v1`;
 
+// localtunnel.me shows a browser-friendly warning page on first visit unless this
+// header is sent. Safe to send always — backends ignore it.
+const TUNNEL_HEADERS = { 'bypass-tunnel-reminder': 'true' };
+
 type ApiResponse<T> = { success: boolean; data: T };
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers: { ...TUNNEL_HEADERS } });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   const json = (await res.json()) as ApiResponse<T>;
   return json.data;
@@ -17,7 +21,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...TUNNEL_HEADERS },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST ${path} → ${res.status}`);
@@ -26,7 +30,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers: { ...TUNNEL_HEADERS } });
   if (!res.ok) throw new Error(`DELETE ${path} → ${res.status}`);
   const json = (await res.json()) as ApiResponse<T>;
   return json.data;
@@ -60,7 +64,11 @@ export function streamConversation(
     try {
       res = await fetch(`${API_BASE}/conversations/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...TUNNEL_HEADERS,
+        },
         body: JSON.stringify(payload),
         signal: ctrl.signal,
       });

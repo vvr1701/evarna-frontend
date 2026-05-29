@@ -24,6 +24,58 @@ export interface OnboardResponse {
 export const onboardUser = (p: OnboardPayload): Promise<OnboardResponse> =>
   apiPost<OnboardResponse>('/users/onboard', p);
 
+// ── Characters ─────────────────────────────────────────────────────────────
+
+// Shape returned by GET /characters/user/:user_id. The backend is the source of
+// truth for archetype names ("bestfriend" — frontend maps that to "friend").
+export interface ApiCharacter {
+  _id: string;
+  user_id: string;
+  name: string;
+  archetype: string;
+  gender?: string;
+  voice_id?: string;
+  last_interaction_at?: string;
+  last_message_preview?: string | null;
+  memory_highlight?: string | null;
+  created_at?: string;
+}
+
+// Backend returns { characters: [...] } inside ApiResponse.data; unwrap here so
+// the consumer just gets the array.
+export const getUserCharacters = async (userId: string): Promise<ApiCharacter[]> => {
+  const res = await apiGet<{ characters: ApiCharacter[] }>(`/characters/user/${userId}`);
+  return res.characters;
+};
+
+export interface CreateCharacterPayload {
+  user_id: string;
+  archetype: string;
+  gender: string;
+  voice_id: string;
+  name: string;
+}
+
+export interface CreateCharacterResponse {
+  character_id: string;
+}
+
+export const createCharacter = (p: CreateCharacterPayload): Promise<CreateCharacterResponse> =>
+  apiPost<CreateCharacterResponse>('/characters/create', p);
+
+// ── User stats ─────────────────────────────────────────────────────────────
+
+export interface ApiUserStats {
+  total_companions: number;
+  total_sessions: number;
+  total_voice_minutes: number;
+  total_memories: number;
+  member_since: string;
+}
+
+export const getUserStats = (userId: string): Promise<ApiUserStats> =>
+  apiGet<ApiUserStats>(`/users/${userId}/stats`);
+
 // ── Sessions ───────────────────────────────────────────────────────────────
 
 export const startSession = (
@@ -103,3 +155,8 @@ export interface VoiceSessionResponse {
 
 export const startVoiceSession = (userId: string, characterId: string): Promise<VoiceSessionResponse> =>
   apiPost('/voice/sessions/start', { user_id: userId, character_id: characterId });
+
+// Defensive end-of-call call. Backend also auto-ends on LiveKit ParticipantDisconnected,
+// so this is idempotent and safe to fire-and-forget.
+export const endVoiceSession = (sessionId: string): Promise<unknown> =>
+  apiPost(`/sessions/${sessionId}/end`, {});

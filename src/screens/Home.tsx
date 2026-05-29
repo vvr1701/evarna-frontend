@@ -159,10 +159,83 @@ function CompanionCard({ companion, onChat, onCall, hero = false }: { companion:
   );
 }
 
+// ─── ConversationRow (WhatsApp-style list item for 2+ companions) ──────────
+// 80px tall row: 48px ringed avatar · name+archetype·preview·memory column ·
+// timestamp on the right. Tapping anywhere on the row opens chat for that
+// companion. Used only when the user has 2 or more companions on home.
+function formatLastInteraction(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function ConversationRow({ companion, onPress }: { companion: Companion; onPress: () => void }) {
+  const accent = ARCHETYPE_COLORS[companion.archetype] || W.primary;
+  const timestamp = formatLastInteraction(companion.lastInteractionAt) || companion.lastTalked || '';
+  const preview = companion.lastMessagePreview;
+  const highlight = companion.memoryHighlight ?? companion.memory;
+
+  return (
+    <Pressable onPress={onPress} style={{ height: 80, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 12 }}>
+      {/* Avatar with archetype-color ring */}
+      <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+        <Avatar name={companion.name} color={accent} size={48} image={companion.image} breathe={false} />
+      </View>
+
+      {/* Center column: name+badge / preview / memory */}
+      <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Txt font="comp" weight={600} style={{ fontSize: 16, color: W.cream, letterSpacing: -0.2 }} numberOfLines={1}>
+            {companion.name}
+          </Txt>
+          <View style={{
+            paddingVertical: 2, paddingHorizontal: 7, borderRadius: 999,
+            backgroundColor: alpha(W.secondary, '1f'),
+            borderWidth: 1, borderColor: alpha(W.secondary, '40'),
+          }}>
+            <Txt font="user" weight={600} style={{ fontSize: 10, color: W.secondary, letterSpacing: 0.5 }}>
+              {ARCHETYPE_LABEL[companion.archetype]}
+            </Txt>
+          </View>
+        </View>
+        {preview ? (
+          <Txt font="user" numberOfLines={1} style={{ marginTop: 2, fontSize: 13, color: W.text2 }}>
+            {preview}
+          </Txt>
+        ) : null}
+        {highlight ? (
+          <Txt font="user" numberOfLines={1} style={{ marginTop: 2, fontSize: 11, color: W.accent }}>
+            Remembers: {highlight}
+          </Txt>
+        ) : null}
+      </View>
+
+      {/* Right column: timestamp */}
+      {timestamp ? (
+        <Txt font="user" style={{ fontSize: 11, color: W.text3 }}>
+          {timestamp}
+        </Txt>
+      ) : null}
+    </Pressable>
+  );
+}
+
 // ─── S10 HOME ──────────────────────────────────────────────────────────────
-export function S10_Home({ go, tier, companions, onSelectCompanion, onCallCompanion, userName }: {
+export function S10_Home({ go, tier, companions, onSelectCompanion, onCallCompanion, userName, onAddCompanion, maxCompanions: maxCompanionsProp }: {
   go: Go; tier: Tier; companions: Companion[]; userName: string;
   onSelectCompanion: (c: Companion) => void; onCallCompanion: (c: Companion) => void;
+  onAddCompanion?: () => void; maxCompanions?: number;
 }) {
   const glow = useGreetingGlow();
   const greeting = (() => {
@@ -173,8 +246,12 @@ export function S10_Home({ go, tier, companions, onSelectCompanion, onCallCompan
     return `Good evening, ${userName}`;
   })();
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const maxCompanions = tier === 'free' ? 1 : tier === 'plus' ? 3 : 5;
+  // Phase 1 cap: 5 companions per user (overrides tier-based caps from prototype).
+  const maxCompanions = maxCompanionsProp ?? 5;
   const isSingle = companions.length === 1;
+  const isList = companions.length >= 2;
+  const canAdd = companions.length < maxCompanions;
+  const handleAdd = onAddCompanion ?? (() => go('add-companion'));
 
   return (
     <Screen>
@@ -224,26 +301,63 @@ export function S10_Home({ go, tier, companions, onSelectCompanion, onCallCompan
           )}
         </View>
 
-        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12, alignItems: isSingle ? 'center' : 'stretch', justifyContent: isSingle ? 'center' : 'flex-start', minHeight: isSingle ? 400 : undefined }}>
-          {companions.map(c => (
-            <CompanionCard key={String(c.id)} companion={c} hero={isSingle} onChat={() => onSelectCompanion(c)} onCall={() => onCallCompanion(c)} />
-          ))}
-          {tier === 'free' && companions.length === 1 && (
-            <Pressable onPress={() => go('add-companion')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, marginTop: 32 }}>
-              <Txt font="user" weight={500} style={{ fontSize: 13, color: W.secondary, letterSpacing: 0.3 }}>Explore more companions</Txt>
-              <NavIcon name="right" color={W.secondary} size={16} />
-            </Pressable>
-          )}
-          {tier !== 'free' && companions.length < maxCompanions && (
-            <Pressable onPress={() => go('add-companion')} style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderStyle: 'dashed', borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' }}>
-                <NavIcon name="plus" color={W.text2} size={16} />
-              </View>
-              <Txt font="user" weight={500} style={{ fontSize: 14, color: W.text2, letterSpacing: 0.3 }}>Add a companion</Txt>
-            </Pressable>
-          )}
-        </View>
+        {isList ? (
+          // ── List mode (2+ companions): WhatsApp-style conversation rows ──
+          <View style={{ paddingBottom: 96 }}>
+            {companions.map(c => (
+              <ConversationRow key={String(c.id)} companion={c} onPress={() => onSelectCompanion(c)} />
+            ))}
+          </View>
+        ) : (
+          // ── Single companion (hero card) ──
+          <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12, alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+            {companions.map(c => (
+              <CompanionCard key={String(c.id)} companion={c} hero onChat={() => onSelectCompanion(c)} onCall={() => onCallCompanion(c)} />
+            ))}
+            {/* Centered "+" below the card. Same circle treatment as spec. */}
+            <View style={{ marginTop: 24, alignItems: 'center', gap: 8 }}>
+              <Pressable
+                onPress={canAdd ? handleAdd : undefined}
+                style={{
+                  width: 56, height: 56, borderRadius: 28,
+                  backgroundColor: W.surface1,
+                  borderWidth: 1, borderColor: canAdd ? W.primary : W.textMuted,
+                  alignItems: 'center', justifyContent: 'center',
+                  opacity: canAdd ? 1 : 0.5,
+                }}
+              >
+                <NavIcon name="plus" color={canAdd ? W.primary : W.textMuted} size={22} />
+              </Pressable>
+              <Txt font="user" weight={500} style={{ fontSize: 12, color: W.text2, letterSpacing: 0.3 }}>
+                {canAdd ? 'Add companion' : 'Maximum companions reached'}
+              </Txt>
+            </View>
+          </View>
+        )}
       </ScrollView>
+
+      {/* FAB for list mode — always reachable, bottom-right */}
+      {isList ? (
+        <View pointerEvents="box-none" style={{ position: 'absolute', right: 20, bottom: 90, alignItems: 'flex-end', gap: 6 }}>
+          <Pressable
+            onPress={canAdd ? handleAdd : undefined}
+            style={{
+              width: 56, height: 56, borderRadius: 28,
+              backgroundColor: canAdd ? W.primary : W.surface2,
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: canAdd ? W.primary : '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+              opacity: canAdd ? 1 : 0.6,
+            }}
+          >
+            <NavIcon name="plus" color="#fff" size={24} />
+          </Pressable>
+          {!canAdd ? (
+            <Txt font="user" weight={500} style={{ fontSize: 11, color: W.textMuted }}>
+              Maximum companions reached
+            </Txt>
+          ) : null}
+        </View>
+      ) : null}
     </Screen>
   );
 }
