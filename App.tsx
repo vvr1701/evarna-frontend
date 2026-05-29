@@ -13,8 +13,14 @@ import {
 import {
   Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
 } from '@expo-google-fonts/outfit';
+import { registerGlobals } from '@livekit/react-native';
 import Router from './src/navigation/App';
 import { W } from './src/theme/theme';
+
+// Install LiveKit's WebRTC globals once, before any Room is created. This is a
+// no-op JS shim in Expo Go (where the native module is absent) and only does
+// real work inside a development/production build that includes the module.
+registerGlobals();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 

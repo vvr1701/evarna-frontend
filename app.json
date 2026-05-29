@@ -8,13 +8,28 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F111A",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.whisper.companion"
+      "bundleIdentifier": "app.whisper.companion",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Whisper uses your microphone for voice conversations with your companion.",
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ]
+      }
     },
     "android": {
       "package": "app.whisper.companion",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.INTERNET"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F111A"
@@ -31,7 +46,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#0F111A"
         }
-      ]
+      ],
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc"
     ]
   }
 }

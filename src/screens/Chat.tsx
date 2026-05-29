@@ -7,6 +7,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, ScrollView, Pressable, Animated, Easing } from 'react-native';
 import { startSession, endSession, startVoiceSession, getCharacterSessions, getConversationTurns } from '../api';
 import { streamConversation } from '../api/client';
+import { AudioSession } from '@livekit/react-native';
+import { Room, RoomEvent } from 'livekit-client';
 import { Screen, TopBar } from '../components/Chrome';
 import { AmbientBg } from '../components/AmbientBg';
 import { RadialGlow } from '../components/RadialGlow';
@@ -118,16 +120,77 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
   const [caption, setCaption] = useState<string | null>(null);
   const [pillText, setPillText] = useState('Reflecting on last session…');
 
-  // Fetch LiveKit token from backend when IDs are available.
-  // Full WebRTC connection requires @livekit/react-native (native setup) — see backend README.
+  // When we have a real user + character, drive a live LiveKit voice session.
+  // Otherwise (demo / no IDs) fall back to the scripted orb animation below.
+  const backendVoice = !!(userId && characterId);
+  const roomRef = useRef<Room | null>(null);
+
+  // Real LiveKit connection: fetch a token, start the audio session, join the
+  // room, publish the mic, and drive the orb from active-speaker events.
   useEffect(() => {
     if (!userId || !characterId) return;
-    startVoiceSession(userId, characterId)
-      .then(res => {
-        console.log('[Voice] Session ready. Room:', res.room_name, '| URL:', res.livekit_url);
-      })
-      .catch(e => console.warn('[Voice] Session start failed:', e));
-  }, [userId, characterId]);
+    let cancelled = false;
+    let room: Room | null = null;
+
+    (async () => {
+      try {
+        setPillText('Connecting…');
+        setState('thinking');
+        const res = await startVoiceSession(userId, characterId);
+        if (cancelled) return;
+
+        await AudioSession.startAudioSession();
+
+        room = new Room();
+        roomRef.current = room;
+
+        room
+          .on(RoomEvent.Connected, () => {
+            if (cancelled) return;
+            setPillText('Listening…');
+            setState('listening');
+          })
+          .on(RoomEvent.Disconnected, () => {
+            if (cancelled) return;
+            setState('idle');
+          })
+          .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+            if (cancelled || !room) return;
+            const localId = room.localParticipant.identity;
+            const agentSpeaking = speakers.some(s => s.identity !== localId);
+            const userSpeaking = speakers.some(s => s.identity === localId);
+            if (agentSpeaking) {
+              setState('speaking');
+              setPillText(companion.name);
+            } else if (userSpeaking) {
+              setState('listening');
+              setPillText('Listening…');
+            } else {
+              setState('thinking');
+              setPillText('Thinking…');
+            }
+          });
+
+        await room.connect(res.livekit_url, res.livekit_token);
+        if (cancelled) return;
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[Voice] Session start failed:', e);
+          setPillText('Connection failed');
+          setState('idle');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      const r = roomRef.current;
+      roomRef.current = null;
+      if (r) r.disconnect().catch(() => {});
+      AudioSession.stopAudioSession().catch(() => {});
+    };
+  }, [userId, characterId, companion.name]);
 
   const minutesLeft = minutesRemaining === 'low' ? 5 : minutesRemaining === 'critical' ? 1 : null;
 
@@ -137,8 +200,19 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
     return () => clearInterval(t);
   }, []);
 
+  // Mute toggle — drives the real mic when connected, local state otherwise.
+  const toggleMute = () => {
+    setMuted(prev => {
+      const next = !prev;
+      roomRef.current?.localParticipant.setMicrophoneEnabled(!next).catch(() => {});
+      return next;
+    });
+  };
+
   // simulated state cycle: reflecting → listening → thinking → speaking → memory → loop
+  // Skipped entirely when a real LiveKit session is driving the orb.
   useEffect(() => {
+    if (backendVoice) return;
     const sequence: Step[] = [
       { st: 'thinking', cap: null, ms: 1800, pill: 'Reflecting on last session…' },
       { st: 'listening', cap: null, ms: 2200, pill: 'Listening…' },
@@ -165,7 +239,7 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
     };
     tick();
     return () => { alive = false; clearTimeout(timer); };
-  }, [companion.name]);
+  }, [companion.name, backendVoice]);
 
   return (
     <Screen ambient={false}>
@@ -211,7 +285,7 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
         <GlassPill style={{ padding: 8 }}>
           <CallBtn icon="chat" onPress={() => go('chat')} />
           <CallBtn icon="close" bg={W.danger} size={60} onPress={() => go('home')} />
-          <CallBtn icon={muted ? 'mute' : 'mic'} active={muted} onPress={() => setMuted(m => !m)} />
+          <CallBtn icon={muted ? 'mute' : 'mic'} active={muted} onPress={toggleMute} />
         </GlassPill>
       </View>
     </Screen>
