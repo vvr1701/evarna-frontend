@@ -126,10 +126,11 @@ export default function App() {
     dailyCheckin: true, weeklyReflection: true, autoPlay: true, liveCaptions: true,
   });
 
-  // When the user has a real companion, put it first; keep static ones as extras for UI demo
+  // Show only the user's real onboarded companion. Before onboarding completes,
+  // fall back to a single static companion so the home screen still renders.
   const companions: Companion[] = userCompanion
-    ? [userCompanion, ...PLUS_COMPANIONS.filter(c => c.id !== userCompanion.id).slice(0, 2)]
-    : (t.tier === 'free' ? FREE_COMPANIONS : PLUS_COMPANIONS.slice(0, t.tier === 'plus' ? 3 : 5));
+    ? [userCompanion]
+    : (t.tier === 'free' ? FREE_COMPANIONS : PLUS_COMPANIONS.slice(0, 1));
   const isMinor = false;
   const currentCompanion: Companion = activeCompanion || companions[0];
 

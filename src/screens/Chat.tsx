@@ -38,11 +38,12 @@ export function S09_FirstChat({ go, companion }: { go: Go; companion: Companion 
   const [draft, setDraft] = useState('');
   const [showBadge, setShowBadge] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
+  const [typing, setTyping] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
-  }, [msgs]);
+  }, [msgs, typing]);
 
   const send = () => {
     if (!draft.trim()) return;
@@ -50,10 +51,12 @@ export function S09_FirstChat({ go, companion }: { go: Go; companion: Companion 
     const prevLen = msgs.length;
     setMsgs(m => [...m, { from: 'user', text: userMsg }]);
     setDraft('');
+    setTyping(true);
     setTimeout(() => {
       const next = prevLen >= 2
         ? `I really enjoyed this. I'll remember everything we talked about. Come back tomorrow?`
         : `That means a lot. Tell me more — I'm listening.`;
+      setTyping(false);
       setMsgs(m => [...m, { from: 'comp', text: next }]);
       setShowBadge(true);
       setTimeout(() => setShowBadge(false), 3000);
@@ -79,6 +82,7 @@ export function S09_FirstChat({ go, companion }: { go: Go; companion: Companion 
         contentContainerStyle={{ padding: 16, paddingBottom: 8, gap: 8 }}
       >
         {msgs.map((m, i) => <Bubble key={i} from={m.from} text={m.text || ''} memoryRefs={m.memoryRefs} />)}
+        {typing && <TypingDots />}
         <View style={{ alignSelf: 'center', marginTop: 6 }}>
           <MemoryBadge show={showBadge} />
         </View>
@@ -368,6 +372,57 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Message typed before the session finished starting — streamed once it's ready.
+  const pendingRef = useRef<string | null>(null);
+  const backendMode = !!(userId && characterId);
+
+  // Replace the trailing streaming placeholder with a final/error message.
+  const finishStreaming = (patch: Partial<Msg>) => {
+    setMsgs(m => {
+      const updated = [...m];
+      const last = updated[updated.length - 1];
+      if (last?.streaming) updated[updated.length - 1] = { ...last, ...patch, streaming: false };
+      return updated;
+    });
+  };
+
+  // Stream a real backend reply for an active session. The empty streaming
+  // placeholder bubble must already be appended (shows the typing dots).
+  const runBackendTurn = (sid: string, text: string) => {
+    abortRef.current?.abort();
+    abortRef.current = streamConversation(
+      { session_id: sid, character_id: characterId!, user_id: userId!, message: text },
+      {
+        onChunk: (content) => {
+          setMsgs(m => {
+            const updated = [...m];
+            const last = updated[updated.length - 1];
+            if (last?.streaming) updated[updated.length - 1] = { ...last, text: (last.text ?? '') + content };
+            return updated;
+          });
+        },
+        onDone: () => {
+          finishStreaming({});
+          setShowBadge(true);
+          setTimeout(() => setShowBadge(false), 3000);
+        },
+        onCrisis: (content) => finishStreaming({ text: content }),
+        onError: (err) => {
+          console.warn('[Chat] Stream error:', err);
+          finishStreaming({ text: "(Couldn't reach the server — please try again.)" });
+        },
+      },
+    );
+  };
+
+  // Fire any queued message as soon as the session id becomes available.
+  useEffect(() => {
+    if (sessionId && pendingRef.current) {
+      const text = pendingRef.current;
+      pendingRef.current = null;
+      runBackendTurn(sessionId, text);
+    }
+  }, [sessionId]);
 
   // Start a backend text session when user + character IDs are available
   useEffect(() => {
@@ -379,7 +434,15 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
         setSessionId(res.session_id);
         sessionRef.current = res.session_id;
       })
-      .catch(e => console.warn('[Chat] Session start failed:', e));
+      .catch(e => {
+        console.warn('[Chat] Session start failed:', e);
+        if (!mounted) return;
+        // If the user already sent a message, don't leave it spinning forever.
+        if (pendingRef.current) {
+          pendingRef.current = null;
+          finishStreaming({ text: "(Couldn't reach the server — please try again.)" });
+        }
+      });
     return () => {
       mounted = false;
       abortRef.current?.abort();
@@ -445,55 +508,18 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
     setMsgs(m => [...m, { from: 'user', text }]);
     setDraft('');
 
-    // Use real backend when session is ready
-    if (sessionId && userId && characterId) {
-      // Append empty streaming placeholder
+    // Backend mode: always stream a real reply. Append the streaming
+    // placeholder (typing dots) now; if the session is still starting, queue
+    // the message and the effect above fires it the moment the id arrives.
+    if (backendMode) {
       setMsgs(m => [...m, { from: 'comp', text: '', streaming: true }]);
-      abortRef.current?.abort();
-      abortRef.current = streamConversation(
-        { session_id: sessionId, character_id: characterId, user_id: userId, message: text },
-        {
-          onChunk: (content) => {
-            setMsgs(m => {
-              const updated = [...m];
-              const last = updated[updated.length - 1];
-              if (last?.streaming) updated[updated.length - 1] = { ...last, text: (last.text ?? '') + content };
-              return updated;
-            });
-          },
-          onDone: () => {
-            setMsgs(m => {
-              const updated = [...m];
-              const last = updated[updated.length - 1];
-              if (last?.streaming) updated[updated.length - 1] = { ...last, streaming: false };
-              return updated;
-            });
-            setShowBadge(true);
-            setTimeout(() => setShowBadge(false), 3000);
-          },
-          onCrisis: (content) => {
-            setMsgs(m => {
-              const updated = [...m];
-              const last = updated[updated.length - 1];
-              if (last?.streaming) updated[updated.length - 1] = { ...last, text: content, streaming: false };
-              return updated;
-            });
-          },
-          onError: (err) => {
-            console.warn('[Chat] Stream error:', err);
-            setMsgs(m => {
-              const updated = [...m];
-              const last = updated[updated.length - 1];
-              if (last?.streaming) updated[updated.length - 1] = { ...last, text: "(Something went wrong — please try again.)", streaming: false };
-              return updated;
-            });
-          },
-        },
-      );
+      if (sessionRef.current) runBackendTurn(sessionRef.current, text);
+      else pendingRef.current = text;
       return;
     }
 
-    // Fallback: simulated response when backend session is not available
+    // Fallback: simulated response only when there is no backend connection
+    // at all (prototype companions with no character id).
     setTyping(true);
     setTimeout(() => {
       const isFirstReply = firstRun && userMsgCount === 0;
@@ -557,11 +583,15 @@ export function S14_Chat({ go, companion, accent = W.primary, openMemorySheet, c
         {loadingHistory
           ? <TypingDots />
           : <>
-              {msgs.map((m, i) =>
-                m.from === 'voiceUser' || m.from === 'voiceComp'
-                  ? <VoiceNoteBubble key={i} from={m.from === 'voiceUser' ? 'user' : 'comp'} duration={m.duration} />
-                  : <BubbleMem key={i} from={m.from} text={m.text || ''} memoryRefs={m.memoryRefs} accent={accent} onMemoryClick={openMemorySheet} />,
-              )}
+              {msgs.map((m, i) => {
+                if (m.from === 'voiceUser' || m.from === 'voiceComp')
+                  return <VoiceNoteBubble key={i} from={m.from === 'voiceUser' ? 'user' : 'comp'} duration={m.duration} />;
+                // While a streamed reply has no text yet, show the typing indicator
+                // instead of an empty bubble; it swaps to text once tokens arrive.
+                if (m.streaming && !m.text)
+                  return <TypingDots key={i} />;
+                return <BubbleMem key={i} from={m.from} text={m.text || ''} memoryRefs={m.memoryRefs} accent={accent} onMemoryClick={openMemorySheet} />;
+              })}
               {typing && <TypingDots />}
             </>
         }

@@ -2,7 +2,7 @@
 // All API calls go through /api/v1 — this is the single place to update
 // if the backend address changes (e.g. staging, production).
 
-export const BASE_URL = 'http://192.168.29.253:3000';
+export const BASE_URL = 'http://192.168.1.10:3000';
 export const API_BASE = `${BASE_URL}/api/v1`;
 
 type ApiResponse<T> = { success: boolean; data: T };
