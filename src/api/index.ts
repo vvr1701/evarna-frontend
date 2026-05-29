@@ -41,8 +41,12 @@ export interface ApiCharacter {
   created_at?: string;
 }
 
-export const getUserCharacters = (userId: string): Promise<ApiCharacter[]> =>
-  apiGet<ApiCharacter[]>(`/characters/user/${userId}`);
+// Backend returns { characters: [...] } inside ApiResponse.data; unwrap here so
+// the consumer just gets the array.
+export const getUserCharacters = async (userId: string): Promise<ApiCharacter[]> => {
+  const res = await apiGet<{ characters: ApiCharacter[] }>(`/characters/user/${userId}`);
+  return res.characters;
+};
 
 export interface CreateCharacterPayload {
   user_id: string;
@@ -62,9 +66,11 @@ export const createCharacter = (p: CreateCharacterPayload): Promise<CreateCharac
 // ── User stats ─────────────────────────────────────────────────────────────
 
 export interface ApiUserStats {
-  character_count: number;
-  total_conversations?: number;
-  total_minutes?: number;
+  total_companions: number;
+  total_sessions: number;
+  total_voice_minutes: number;
+  total_memories: number;
+  member_since: string;
 }
 
 export const getUserStats = (userId: string): Promise<ApiUserStats> =>

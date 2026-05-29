@@ -2,7 +2,7 @@
 // router. Keeps the exact go(screen) + tab behavior of the prototype.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Animated, Easing } from 'react-native';
+import { View, Animated, Easing, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { W } from '../theme/theme';
 import { ScreenName } from './types';
@@ -230,49 +230,51 @@ export default function App() {
   // Called from S08_Name. In "onboarding" mode this hits POST /users/onboard
   // (creates both user + first companion). In "add" mode we already have a
   // user_id, so we hit POST /characters/create to add another companion.
-  const handlePickName = (name: string) => {
+  const handlePickName = async (name: string) => {
     setCompanionName(name);
-    const selectedVoice = backendVoices.find(v => v.id === voicePick);
     const apiArchetype = ARCHETYPE_MAP[archetypePick] ?? archetypePick;
-    const apiGender = selectedVoice?.gender ?? 'female';
-    const apiVoiceId = voicePick ?? '';
 
-    if (addMode === 'add' && userId) {
-      createCharacter({
-        user_id: userId,
-        archetype: apiArchetype,
-        gender: apiGender,
-        voice_id: apiVoiceId,
-        name,
-      })
-        .then(res => {
-          // Refresh the home list so the new companion shows up immediately,
-          // and switch the in-memory active character to the new one.
-          setCharacterId(res.character_id);
-          const newCompanion: Companion = {
-            id: res.character_id,
-            name,
-            archetype: archetypePick,
-            lastTalked: 'Just now',
-          };
-          setUserCompanion(newCompanion);
-          setActiveCompanion(newCompanion);
-          refreshUserCharacters(userId);
-        })
-        .catch(e => console.warn('[AddCompanion] API failed:', e));
+    // Backend gender enum is strict (male/female/nonbinary/undisclosed). The
+    // onboarding UI uses the hyphenated 'non-binary' — normalize before sending.
+    const genderNorm = userGender === 'non-binary' ? 'nonbinary' : userGender;
+
+    // The backend rejects an empty or non-UUID voice_id. Make sure we send a
+    // real backend voice: prefer the user's pick, else the first voice matching
+    // their gender, else the first available. Fetch the catalog on demand if
+    // it didn't load earlier.
+    let voices = backendVoices;
+    if (voices.length === 0) {
+      try {
+        voices = await getVoices();
+        setBackendVoices(voices);
+      } catch {
+        /* surfaced below */
+      }
+    }
+    const chosenVoice =
+      voices.find(v => v.id === voicePick) ??
+      voices.find(v => v.gender === (genderNorm === 'male' ? 'male' : 'female')) ??
+      voices[0];
+
+    if (!chosenVoice) {
+      Alert.alert(
+        'Setup error',
+        "Couldn't load companion voices from the server. Check your connection and try again.",
+      );
       return;
     }
 
-    onboardUser({
-      display_name: t.userName,
-      gender: userGender,
-      date_of_birth: dateOfBirth,
-      communication_style: commStyle,
-      intent: INTENT_MAP[archetypePick] ?? 'emotional support',
-      companion: { name, archetype: apiArchetype, gender: apiGender, voice_id: apiVoiceId },
-    })
-      .then(res => {
-        setUserId(res.user_id);
+    if (addMode === 'add' && userId) {
+      try {
+        const res = await createCharacter({
+          user_id: userId,
+          archetype: apiArchetype,
+          gender: chosenVoice.gender,
+          voice_id: chosenVoice.id,
+          name,
+        });
+        // Refresh the home list so the new companion shows up immediately,
+        // and switch the in-memory active character to the new one.
         setCharacterId(res.character_id);
         const newCompanion: Companion = {
           id: res.character_id,
@@ -281,8 +283,48 @@ export default function App() {
           lastTalked: 'Just now',
         };
         setUserCompanion(newCompanion);
-      })
-      .catch(e => console.warn('[Onboarding] API failed:', e));
+        setActiveCompanion(newCompanion);
+        refreshUserCharacters(userId);
+      } catch (e) {
+        console.warn('[AddCompanion] API failed:', e);
+        Alert.alert(
+          'Connection problem',
+          "Couldn't reach the server to add your companion. Make sure the backend is reachable and try again.",
+        );
+      }
+      return;
+    }
+
+    try {
+      const res = await onboardUser({
+        display_name: t.userName,
+        gender: genderNorm,
+        date_of_birth: dateOfBirth,
+        communication_style: commStyle,
+        intent: INTENT_MAP[archetypePick] ?? 'emotional support',
+        companion: {
+          name,
+          archetype: apiArchetype,
+          gender: chosenVoice.gender,
+          voice_id: chosenVoice.id,
+        },
+      });
+      setUserId(res.user_id);
+      setCharacterId(res.character_id);
+      const newCompanion: Companion = {
+        id: res.character_id,
+        name,
+        archetype: archetypePick,
+        lastTalked: 'Just now',
+      };
+      setUserCompanion(newCompanion);
+    } catch (e) {
+      console.warn('[Onboarding] API failed:', e);
+      Alert.alert(
+        'Connection problem',
+        "Couldn't reach the server to create your companion, so replies won't be real yet. Make sure the backend is reachable and try onboarding again.",
+      );
+    }
   };
 
   // Home rendered plainly (used both as a screen and as the backdrop for sheets)
