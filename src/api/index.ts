@@ -103,3 +103,8 @@ export interface VoiceSessionResponse {
 
 export const startVoiceSession = (userId: string, characterId: string): Promise<VoiceSessionResponse> =>
   apiPost('/voice/sessions/start', { user_id: userId, character_id: characterId });
+
+// Defensive end-of-call call. Backend also auto-ends on LiveKit ParticipantDisconnected,
+// so this is idempotent and safe to fire-and-forget.
+export const endVoiceSession = (sessionId: string): Promise<unknown> =>
+  apiPost(`/sessions/${sessionId}/end`, {});
