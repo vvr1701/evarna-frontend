@@ -24,6 +24,52 @@ export interface OnboardResponse {
 export const onboardUser = (p: OnboardPayload): Promise<OnboardResponse> =>
   apiPost<OnboardResponse>('/users/onboard', p);
 
+// ── Characters ─────────────────────────────────────────────────────────────
+
+// Shape returned by GET /characters/user/:user_id. The backend is the source of
+// truth for archetype names ("bestfriend" — frontend maps that to "friend").
+export interface ApiCharacter {
+  _id: string;
+  user_id: string;
+  name: string;
+  archetype: string;
+  gender?: string;
+  voice_id?: string;
+  last_interaction_at?: string;
+  last_message_preview?: string | null;
+  memory_highlight?: string | null;
+  created_at?: string;
+}
+
+export const getUserCharacters = (userId: string): Promise<ApiCharacter[]> =>
+  apiGet<ApiCharacter[]>(`/characters/user/${userId}`);
+
+export interface CreateCharacterPayload {
+  user_id: string;
+  archetype: string;
+  gender: string;
+  voice_id: string;
+  name: string;
+}
+
+export interface CreateCharacterResponse {
+  character_id: string;
+}
+
+export const createCharacter = (p: CreateCharacterPayload): Promise<CreateCharacterResponse> =>
+  apiPost<CreateCharacterResponse>('/characters/create', p);
+
+// ── User stats ─────────────────────────────────────────────────────────────
+
+export interface ApiUserStats {
+  character_count: number;
+  total_conversations?: number;
+  total_minutes?: number;
+}
+
+export const getUserStats = (userId: string): Promise<ApiUserStats> =>
+  apiGet<ApiUserStats>(`/users/${userId}/stats`);
+
 // ── Sessions ───────────────────────────────────────────────────────────────
 
 export const startSession = (
