@@ -13,12 +13,14 @@ import {
 import {
   Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
 } from '@expo-google-fonts/outfit';
-// LiveKit globals disabled for Expo Go compatibility (no native WebRTC bindings).
-// Re-enable for dev-client builds by uncommenting the next two lines.
-// import { registerGlobals } from '@livekit/react-native';
-// registerGlobals();
+import { registerGlobals } from '@livekit/react-native';
 import Router from './src/navigation/App';
 import { W } from './src/theme/theme';
+
+// Install LiveKit's WebRTC globals once, before any Room is created. This is a
+// no-op JS shim in Expo Go (where the native module is absent) and only does
+// real work inside a development/production build that includes the module.
+registerGlobals();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
