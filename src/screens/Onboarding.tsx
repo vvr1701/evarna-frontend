@@ -667,7 +667,9 @@ export function S_Handoff({ go }: { go: Go }) {
 }
 
 // ─── S04 ARCHETYPE ───────────────────────────────────────────────────────
-export function S04_Archetype({ go, onPick }: { go: Go; onPick: (a: Archetype) => void }) {
+// `backTo` lets the "add companion" flow route back to home rather than the
+// onboarding handoff. Defaults preserve the original first-run behavior.
+export function S04_Archetype({ go, onPick, backTo = 'handoff' }: { go: Go; onPick: (a: Archetype) => void; backTo?: import('../navigation/types').ScreenName }) {
   const cards: { id: Archetype; icon: any; title: string; sub: string }[] = [
     { id: 'friend', icon: 'two', title: 'Friend', sub: "A presence who's always there" },
     { id: 'mentor', icon: 'compass', title: 'Mentor', sub: 'Help thinking things through' },
@@ -677,7 +679,7 @@ export function S04_Archetype({ go, onPick }: { go: Go; onPick: (a: Archetype) =
   const [picked, setPicked] = useState<string | null>(null);
   return (
     <Screen>
-      <TopBar left={<BackBtn onPress={() => go('handoff')} />} center={<ProgressDots total={5} current={3} />} />
+      <TopBar left={<BackBtn onPress={() => go(backTo)} />} center={<ProgressDots total={5} current={3} />} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
         <Txt font="user" weight={600} style={{ fontSize: 10, color: W.text2, letterSpacing: 2.4, textTransform: 'uppercase' }}>
           Your companion · 1 of 3

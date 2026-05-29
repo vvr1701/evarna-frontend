@@ -2,23 +2,46 @@
   "expo": {
     "name": "Whisper",
     "slug": "whisper-rn",
+    "scheme": "whisper",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F111A",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.whisper.companion"
+      "bundleIdentifier": "app.whisper.companion",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Whisper needs your microphone to let you talk to your companion during voice calls.",
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ]
+      },
+      "bitcode": false
     },
     "android": {
       "package": "app.whisper.companion",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F111A"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.BLUETOOTH"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +55,11 @@
           "backgroundColor": "#0F111A"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ef13714d-382a-4849-9de3-a47f6286e9cf"
+      }
+    }
   }
 }

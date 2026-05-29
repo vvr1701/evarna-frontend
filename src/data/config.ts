@@ -41,6 +41,11 @@ export interface Companion {
   image?: string;
   gender?: string;
   voice?: string;
+  // Backend-sourced fields used by the home conversation-list (S11). Optional so
+  // existing static prototype companions still type-check.
+  lastInteractionAt?: string;       // ISO date — used for sort + timestamp
+  lastMessagePreview?: string | null;
+  memoryHighlight?: string | null;
 }
 
 export const PLUS_COMPANIONS: Companion[] = [

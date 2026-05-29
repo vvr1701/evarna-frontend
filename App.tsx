@@ -13,6 +13,10 @@ import {
 import {
   Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
 } from '@expo-google-fonts/outfit';
+// LiveKit globals disabled for Expo Go compatibility (no native WebRTC bindings).
+// Re-enable for dev-client builds by uncommenting the next two lines.
+// import { registerGlobals } from '@livekit/react-native';
+// registerGlobals();
 import Router from './src/navigation/App';
 import { W } from './src/theme/theme';
 

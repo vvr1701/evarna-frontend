@@ -4,13 +4,14 @@
 // with RadialGlow / BlurView / Animated equivalents.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ScrollView, Pressable, Animated, Easing } from 'react-native';
-import { startSession, endSession, startVoiceSession, getCharacterSessions, getConversationTurns } from '../api';
+import { View, ScrollView, Pressable, Animated, Easing, Linking } from 'react-native';
+import { startSession, endSession, getCharacterSessions, getConversationTurns } from '../api';
 import { streamConversation } from '../api/client';
+import { useVoiceCall } from '../hooks/useVoiceCall';
 import { Screen, TopBar } from '../components/Chrome';
 import { AmbientBg } from '../components/AmbientBg';
 import { RadialGlow } from '../components/RadialGlow';
-import { Orb, OrbState } from '../components/Orb';
+import { Orb } from '../components/Orb';
 import { NavIcon, IconName } from '../components/NavIcon';
 import { Txt } from '../components/Txt';
 import { GlassPill, PrimaryButton, MemoryBadge, MinuteWarningBanner } from '../components/Atoms';
@@ -109,63 +110,39 @@ interface VoiceCallProps {
   characterId?: string;
 }
 
-type Step = { st: OrbState; cap: string | null; ms: number; pill: string; memHint?: boolean };
-
 export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity = 1, minutesRemaining = 'normal', userId, characterId }: VoiceCallProps) {
-  const [state, setState] = useState<OrbState>('idle');
-  const [muted, setMuted] = useState(false);
   const [time, setTime] = useState(0);
-  const [caption, setCaption] = useState<string | null>(null);
-  const [pillText, setPillText] = useState('Reflecting on last session…');
-
-  // Fetch LiveKit token from backend when IDs are available.
-  // Full WebRTC connection requires @livekit/react-native (native setup) — see backend README.
-  useEffect(() => {
-    if (!userId || !characterId) return;
-    startVoiceSession(userId, characterId)
-      .then(res => {
-        console.log('[Voice] Session ready. Room:', res.room_name, '| URL:', res.livekit_url);
-      })
-      .catch(e => console.warn('[Voice] Session start failed:', e));
-  }, [userId, characterId]);
+  const navigatedRef = useRef(false);
+  const goHome = () => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    go('home');
+  };
+  const { phase, orbState, muted, error, toggleMute, hangUp, retry } = useVoiceCall({
+    userId,
+    characterId,
+    enabled: true,
+    onEnded: goHome,
+  });
 
   const minutesLeft = minutesRemaining === 'low' ? 5 : minutesRemaining === 'critical' ? 1 : null;
 
-  // session timer
+  // session timer — only counts up while connected
   useEffect(() => {
+    if (phase !== 'connected') return;
     const t = setInterval(() => setTime(s => s + 1), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [phase]);
 
-  // simulated state cycle: reflecting → listening → thinking → speaking → memory → loop
-  useEffect(() => {
-    const sequence: Step[] = [
-      { st: 'thinking', cap: null, ms: 1800, pill: 'Reflecting on last session…' },
-      { st: 'listening', cap: null, ms: 2200, pill: 'Listening…' },
-      { st: 'thinking', cap: null, ms: 1200, pill: 'Thinking…' },
-      { st: 'speaking', cap: 'I remember you mentioned your interview…', ms: 3000, pill: companion.name, memHint: true },
-      { st: 'speaking', cap: 'How are you feeling about it now?', ms: 2500, pill: companion.name },
-      { st: 'listening', cap: null, ms: 2200, pill: 'Listening…' },
-    ];
-    let i = 0;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      if (!alive) return;
-      const step = sequence[i % sequence.length];
-      setState(step.st);
-      setCaption(step.cap);
-      setPillText(step.pill);
-      if (step.memHint) {
-        setState('memory');
-        setTimeout(() => { if (alive) setState('speaking'); }, 500);
-      }
-      i++;
-      timer = setTimeout(tick, step.ms);
-    };
-    tick();
-    return () => { alive = false; clearTimeout(timer); };
-  }, [companion.name]);
+  // Hangup → tear down LiveKit, then navigate. The hook's onEnded fires after
+  // teardown completes; we route through goHome so taps and remote disconnects
+  // converge on a single navigation.
+  const handleEnd = async () => {
+    await hangUp();
+    goHome();
+  };
+
+  const pillText = derivePillText(phase, orbState, companion.name);
 
   return (
     <Screen ambient={false}>
@@ -183,14 +160,14 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
       </View>
       <TopBar
         left={
-          <Pressable onPress={() => go('home')}>
+          <Pressable onPress={handleEnd}>
             <NavIcon name="down" color={W.text2} />
           </Pressable>
         }
         center={
           <View style={{ height: 28, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
             <BlurPill>
-              <NavIcon name="sparkle" color={W.secondary} size={14} />
+              <NavIcon name="sparkle" color={phase === 'reconnecting' ? W.danger : W.secondary} size={14} />
               <Txt font="user" weight={500} style={{ fontSize: 12, color: W.text2 }}>{pillText}</Txt>
             </BlurPill>
           </View>
@@ -198,23 +175,66 @@ export function S12_VoiceCall({ go, companion, accent = W.primary, orbIntensity 
         right={<Txt font="user" style={{ fontSize: 11, color: W.text2, opacity: 0.5 }}>{fmt(time)}</Txt>}
       />
       {minutesLeft != null && <MinuteWarningBanner minutes={minutesLeft} onTopUp={() => go('topup')} />}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-        <Orb state={state} size={180} accent={accent} intensity={orbIntensity} />
-        <View style={{ marginTop: -20, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent, shadowColor: accent, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }} />
-          <Txt font="comp" weight={600} style={{ fontSize: 22, color: W.text }}>{companion.name}</Txt>
+
+      {phase === 'error' && error ? (
+        <CallErrorView error={error} onRetry={retry} onCancel={handleEnd} />
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <Orb state={orbState} size={180} accent={accent} intensity={orbIntensity} />
+          <View style={{ marginTop: -20, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent, shadowColor: accent, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }} />
+            <Txt font="comp" weight={600} style={{ fontSize: 22, color: W.text }}>{companion.name}</Txt>
+          </View>
+          <BlurInCaption text={null} />
         </View>
-        <BlurInCaption text={caption} />
-      </View>
+      )}
+
       {/* Floating glass control pill */}
       <View style={{ paddingHorizontal: 24, paddingBottom: 80, alignItems: 'center' }}>
         <GlassPill style={{ padding: 8 }}>
-          <CallBtn icon="chat" onPress={() => go('chat')} />
-          <CallBtn icon="close" bg={W.danger} size={60} onPress={() => go('home')} />
-          <CallBtn icon={muted ? 'mute' : 'mic'} active={muted} onPress={() => setMuted(m => !m)} />
+          <CallBtn icon="chat" onPress={() => { void hangUp(); navigatedRef.current = true; go('chat'); }} />
+          <CallBtn icon="close" bg={W.danger} size={60} onPress={handleEnd} />
+          <CallBtn icon={muted ? 'mute' : 'mic'} active={muted} onPress={toggleMute} />
         </GlassPill>
       </View>
     </Screen>
+  );
+}
+
+function derivePillText(phase: ReturnType<typeof useVoiceCall>['phase'], orbState: ReturnType<typeof useVoiceCall>['orbState'], companionName: string): string {
+  if (phase === 'connecting') return 'Connecting…';
+  if (phase === 'reconnecting') return 'Reconnecting…';
+  if (phase === 'ended') return 'Call ended';
+  if (phase === 'error') return 'Connection issue';
+  // connected — orbState-driven
+  if (orbState === 'speaking') return companionName;
+  if (orbState === 'listening') return 'Listening…';
+  if (orbState === 'thinking') return 'Thinking…';
+  return companionName;
+}
+
+function CallErrorView({ error, onRetry, onCancel }: { error: { kind: string; message: string }; onRetry: () => void; onCancel: () => void }) {
+  const isPermission = error.kind === 'mic-permission';
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+      <Txt font="comp" weight={600} style={{ fontSize: 20, color: W.text, textAlign: 'center', marginBottom: 12 }}>
+        {isPermission ? 'Microphone needed' : "Couldn't connect"}
+      </Txt>
+      <Txt font="user" style={{ fontSize: 14, color: W.text2, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+        {error.message}
+      </Txt>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <PrimaryButton onPress={isPermission ? () => Linking.openSettings() : onRetry}>
+          {isPermission ? 'Open Settings' : 'Try again'}
+        </PrimaryButton>
+        <Pressable
+          onPress={onCancel}
+          style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+        >
+          <Txt font="user" weight={500} style={{ fontSize: 14, color: W.text }}>Cancel</Txt>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
